@@ -1,0 +1,10 @@
+obj
+bin
+.vscode
+telegram_credentials.txt
+app_data.hpp
+UserData
+Makefile
+*.make
+*.log.*
+*.log

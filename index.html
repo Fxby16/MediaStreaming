@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Streaming Auth</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Welcome to Streaming</h1>
+  </header>
+  <div class="container" id="auth-container">
+    <div id="step-phone" class="auth-step" style="display: none;">
+      <input type="text" id="phone_number" placeholder="Phone Number" />
+      <button onclick="sendPhone()">Next</button>
+    </div>
+
+    <div id="step-code" class="auth-step" style="display:none;">
+      <input type="text" id="code" placeholder="Authentication Code" />
+      <button onclick="sendCode()">Next</button>
+    </div>
+
+    <div id="step-password" class="auth-step" style="display:none;">
+      <input type="password" id="password" placeholder="2FA Password (if any)" />
+      <button onclick="sendPassword()">Finish</button>
+    </div>
+  </div>
+
+  <div class="container" id="video-ui" style="display: none;">
+    <h2>Available Videos</h2>
+    <ul id="video-list"></ul>
+    <div id="video-container"></div>
+  </div>
+
+  <script>
+    const server = 'http://localhost:10000';
+
+    window.onload = function() {
+      sendApi();
+    };
+  
+    function sendApi() {
+      const directory = "test_auth";
+  
+      fetch(`${server}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ directory })
+      })
+      .then(() => checkState());
+    }
+  
+    function sendPhone() {
+      const phone_number = document.getElementById('phone_number').value;
+      console.log('Sending phone number:', phone_number);
+  
+      fetch(`${server}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number })
+      })
+      .then(() => checkState());
+    }
+  
+    function sendCode() {
+      const code = document.getElementById('code').value;
+      console.log('Sending code:', code);
+  
+      fetch(`${server}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      })
+      .then(() => checkState());
+    }
+  
+    function checkState() {
+      console.log('Checking state...');
+      fetch(`${server}/auth/get_state`)
+        .then(res => res.json())
+        .then(state => {
+          console.log('Current state:', state);
+          switch (state['state']) {
+            case 'authorizationStateWaitPassword':
+              showStep('step-password');
+              break;
+            case 'authorizationStateWaitPhoneNumber':
+              showStep('step-phone');
+              break;
+            case 'authorizationStateWaitCode':
+              showStep('step-code');
+              break;
+            case 'authorizationStateReady':
+              document.getElementById('auth-container').style.display = 'none';
+              document.getElementById('video-ui').style.display = 'block';
+              getFiles();
+              break;
+            default:
+              console.log('Unknown state:', state);
+              return checkState();
+          }
+        });
+    }
+  
+    function showStep(id) {
+      document.querySelectorAll('.auth-step').forEach(el => el.style.display = 'none');
+      document.getElementById(id).style.display = 'block';
+    }
+  
+    function getFiles() {
+      fetch(`${server}/get_files`)
+        .then(res => res.json())
+        .then(data => {
+          const videoList = document.getElementById('video-list');
+          videoList.innerHTML = '';
+          data.forEach(file => {
+            const li = document.createElement('li');
+            li.textContent = file['path'];
+            li.onclick = () => playVideo(file);
+            videoList.appendChild(li);
+          });
+        });
+    }
+  
+    function playVideo(file) {
+      const videoContainer = document.getElementById('video-container');
+      videoContainer.innerHTML = '';
+      const video = document.createElement('video');
+      video.src = `${server}/video?file_id=${file['id']}`;
+      video.controls = true;
+      video.autoplay = true;
+      videoContainer.appendChild(video);
+    }
+  </script>
+  
+</body>
+</html>
