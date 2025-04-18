@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.hpp"
+#include "session.hpp"
 
 struct Video
 {
@@ -13,5 +14,5 @@ struct Video
     Video() : file_id(0), mime_type(""), path("") {}
 };
 
-extern std::vector<json> get_chats(void* client, uint64_t offset_order, uint64_t offset_chat_id, size_t limit);
-extern std::vector<Video> get_videos_from_channel(void* client, const std::string &chat_id, int64_t from_message_id, int limit);
+extern std::vector<json> get_chats(std::shared_ptr<ClientSession> session, uint64_t offset_order, uint64_t offset_chat_id, size_t limit);
+extern std::vector<Video> get_videos_from_channel(std::shared_ptr<ClientSession> session, const std::string &chat_id, int64_t from_message_id, int limit);

@@ -35,9 +35,10 @@
 
   <script>
     const server = 'http://localhost:10000';
+    const session_id = 873624;
 
     window.onload = function() {
-      sendApi();
+      checkState();
     };
   
     function sendApi() {
@@ -46,7 +47,7 @@
       fetch(`${server}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directory })
+        body: JSON.stringify({ directory, session_id })
       })
       .then(() => checkState());
     }
@@ -58,7 +59,7 @@
       fetch(`${server}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone_number })
+        body: JSON.stringify({ phone_number, session_id })
       })
       .then(() => checkState());
     }
@@ -70,18 +71,21 @@
       fetch(`${server}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code })
+        body: JSON.stringify({ code, session_id })
       })
       .then(() => checkState());
     }
   
     function checkState() {
       console.log('Checking state...');
-      fetch(`${server}/auth/get_state`)
+      fetch(`${server}/auth/get_state?session_id=${session_id}`)
         .then(res => res.json())
         .then(state => {
           console.log('Current state:', state);
           switch (state['state']) {
+            case 'authorizationStateWaitTdlibParameters':
+              sendApi();
+              break;
             case 'authorizationStateWaitPassword':
               showStep('step-password');
               break;
@@ -109,7 +113,7 @@
     }
   
     function getFiles() {
-      fetch(`${server}/get_files`)
+      fetch(`${server}/get_files?session_id=${session_id}`)
         .then(res => res.json())
         .then(data => {
           const videoList = document.getElementById('video-list');
@@ -127,7 +131,7 @@
       const videoContainer = document.getElementById('video-container');
       videoContainer.innerHTML = '';
       const video = document.createElement('video');
-      video.src = `${server}/video?file_id=${file['id']}`;
+      video.src = `${server}/video?file_id=${file['id']}&session_id=${session_id}`;
       video.controls = true;
       video.autoplay = true;
       videoContainer.appendChild(video);

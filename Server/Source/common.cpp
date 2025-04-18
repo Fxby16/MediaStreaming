@@ -14,7 +14,7 @@ void td_send(const json &j, void* client)
 
     std::string s = j.dump();
 
-    std::cout << "[MESSAGE] Sending message: " << s << std::endl;
+    //std::cout << "[MESSAGE] Sending message: " << s << std::endl;
 
     td_json_client_send(client, s.c_str());
 }
@@ -38,4 +38,27 @@ json td_recv(void* client)
         return nullptr;
     }
     return nullptr;
+}
+
+std::map<std::string, std::string> parse_query_string(const std::string &query_string)
+{
+    std::map<std::string, std::string> params;
+    std::string query_string_copy = query_string;
+    size_t pos = 0;
+    while ((pos = query_string_copy.find('&')) != std::string::npos) {
+        std::string param = query_string_copy.substr(0, pos);
+        size_t eq_pos = param.find('=');
+        if (eq_pos != std::string::npos) {
+            params[param.substr(0, eq_pos)] = param.substr(eq_pos + 1);
+        }
+        query_string_copy.erase(0, pos + 1);
+    }
+    if (!query_string_copy.empty()) {
+        size_t eq_pos = query_string_copy.find('=');
+        if (eq_pos != std::string::npos) {
+            params[query_string_copy.substr(0, eq_pos)] = query_string_copy.substr(eq_pos + 1);
+        }
+    }
+
+    return std::move(params);
 }

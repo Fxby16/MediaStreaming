@@ -1,0 +1,2 @@
+- add delay after receiving requests
+- randomize session id when authenticating
