@@ -3,7 +3,8 @@
 #include <td/telegram/td_json_client.h>
 #include <iostream>
 
-ClientSession::ClientSession() {
+ClientSession::ClientSession() 
+{
     td_instance = td_json_client_create();
 
     if(!td_instance){
@@ -21,7 +22,8 @@ ClientSession::ClientSession() {
     });
 }
 
-ClientSession::~ClientSession() {
+ClientSession::~ClientSession() 
+{
     if(listener){
         listener->stop();
     }
@@ -35,11 +37,13 @@ ClientSession::~ClientSession() {
     }
 }
 
-std::shared_ptr<CircularBuffer<json>> ClientSession::getResponses() {
+std::shared_ptr<CircularBuffer<json>> ClientSession::getResponses()
+{
     return responses;
 }
 
-void ClientSession::send(const json &j) {
+void ClientSession::send(const json &j) 
+{
     std::unique_lock<std::mutex> lock(send_mutex);
 
     td_send(j, td_instance);
@@ -60,4 +64,13 @@ std::shared_ptr<ClientSession> getSession(uint32_t id)
     sessions[id] = session;
 
     return session;
+}
+
+void closeSession(uint32_t id)
+{
+    std::unique_lock<std::mutex> lock(sessions_mutex);
+    auto it = sessions.find(id);
+    if(it != sessions.end()){
+        sessions.erase(it);
+    }
 }

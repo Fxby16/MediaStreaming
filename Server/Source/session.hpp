@@ -18,25 +18,37 @@ class CircularBuffer{
 public:
     CircularBuffer(size_t size) : maxSize(size) {}
 
-    void push(const T& item) {
+    void push(const T& item) 
+    {
         std::unique_lock<std::mutex> lock(mtx);
         
-        if(buffer.size() >= maxSize) {
+        if(buffer.size() >= maxSize){
             buffer.pop_front();
         }
     
         buffer.push_back(std::make_pair(getId(), item));
         notEmpty.notify_all();
+        notChecked.notify_all();
     }
     
-    std::vector<std::pair<uint32_t, T>> get_all() {
+    std::vector<std::pair<uint32_t, T>> get_all(uint32_t last_checked = 0) 
+    {
         std::unique_lock<std::mutex> lock(mtx);
-        std::vector<std::pair<uint32_t, T>> items = std::vector<std::pair<uint32_t, T>>(buffer.begin(), buffer.end());
-    
+        notChecked.wait(lock, [this, last_checked] { return !buffer.empty() && buffer.back().first > last_checked; });
+
+        std::vector<std::pair<uint32_t, T>> items;
+
+        for(auto it = buffer.begin(); it != buffer.end(); it++){
+            if(it->first > last_checked){
+                items.push_back(*it);
+            }
+        }
+
         return std::move(items);
     }
 
-    std::pair<uint32_t, T> pop() {
+    std::pair<uint32_t, T> pop() 
+    {
         std::unique_lock<std::mutex> lock(mtx);
         notEmpty.wait(lock, [this] { return !buffer.empty(); });
     
@@ -46,30 +58,35 @@ public:
         return item;
     }
     
-    std::pair<uint32_t, T> front() {
+    std::pair<uint32_t, T> front() 
+    {
         std::unique_lock<std::mutex> lock(mtx);
         notEmpty.wait(lock, [this] { return !buffer.empty(); });
     
         return buffer.front();
     }
     
-    bool empty() const {
+    bool empty() const 
+    {
         std::unique_lock<std::mutex> lock(mtx);
         return buffer.empty();
     }
 
-    size_t size() const {
+    size_t size() const 
+    {
         std::unique_lock<std::mutex> lock(mtx);
         return buffer.size();
     }
 
-    void clear() {
+    void clear() 
+    {
         std::unique_lock<std::mutex> lock(mtx);
         buffer.clear();
     }
 
 private:
-    uint32_t getId() {
+    uint32_t getId() 
+    {
         assert(id < UINT32_MAX);
         return id++;
     }
@@ -79,6 +96,7 @@ private:
     size_t maxSize;
     std::mutex mtx;
     std::condition_variable notEmpty;
+    std::condition_variable notChecked;
 };
 
 class TelegramListener{
@@ -97,13 +115,12 @@ public:
                 continue;
             }
 
-            //std::cout << "[MESSAGE] Received message: " << r.dump(4) << std::endl;
-
             callback(r);
         }
     }
 
-    void stop() {
+    void stop() 
+    {
         running = false;
     }
 
@@ -129,3 +146,4 @@ private:
 };
 
 extern std::shared_ptr<ClientSession> getSession(uint32_t id);
+extern void closeSession(uint32_t id);

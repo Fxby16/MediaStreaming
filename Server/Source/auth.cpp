@@ -20,8 +20,8 @@ void td_auth_send_parameters(std::shared_ptr<ClientSession> session, const std::
 
     uint32_t last_checked = 0;
     while(true){
-        auto responses = session->getResponses()->get_all();
-        for(auto response = responses.begin(); response != responses.end(); ++response){
+        auto responses = session->getResponses()->get_all(last_checked);
+        for(auto response = responses.begin(); response != responses.end(); response++){
             if(response->first <= last_checked){
                 continue;
             }
@@ -59,6 +59,8 @@ void td_auth_send_parameters(std::shared_ptr<ClientSession> session, const std::
                     });
 
                     std::cout << "[MESSAGE] TDLib parameters sent successfully!\n";
+
+                    while(td_auth_get_state(session) == "authorizationStateWaitTdlibParameters");
 
                     return;
                 }
@@ -136,9 +138,9 @@ std::string td_auth_get_state(std::shared_ptr<ClientSession> session)
     uint32_t last_checked = 0;
 
     while(true){
-        auto responses = session->getResponses()->get_all();
+        auto responses = session->getResponses()->get_all(last_checked);
         
-        for(auto response = responses.rbegin(); response != responses.rend(); ++response){
+        for(auto response = responses.rbegin(); response != responses.rend(); response++){
             if(response->first <= last_checked){
                 continue;
             }

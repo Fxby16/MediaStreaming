@@ -18,9 +18,9 @@ std::vector<json> get_chats(std::shared_ptr<ClientSession> session, uint64_t off
 
     uint32_t last_checked = 0;
     while (true){
-        auto responses = session->getResponses()->get_all();
+        auto responses = session->getResponses()->get_all(last_checked);
         
-        for(auto r = responses.begin(); r != responses.end(); ++r){
+        for(auto r = responses.begin(); r != responses.end(); r++){
             if(r->first <= last_checked){
                 continue;
             }
@@ -41,9 +41,9 @@ std::vector<json> get_chats(std::shared_ptr<ClientSession> session, uint64_t off
 
                         bool found = false;
                         while(!found){
-                            auto responses_2 = session->getResponses()->get_all();
+                            auto responses_2 = session->getResponses()->get_all(last_checked);
 
-                            for(auto r2 = responses_2.begin(); r2 != responses_2.end(); ++r2){
+                            for(auto r2 = responses_2.begin(); r2 != responses_2.end(); r2++){
                                 if(r2->first <= last_checked){
                                     continue;
                                 }
@@ -99,16 +99,14 @@ std::vector<Video> get_videos_from_channel(std::shared_ptr<ClientSession> sessio
 
     uint32_t last_checked = 0;
     while (true){
-        auto responses = session->getResponses()->get_all();
-        for(auto r = responses.begin(); r != responses.end(); ++r){
+        auto responses = session->getResponses()->get_all(last_checked);
+        for(auto r = responses.begin(); r != responses.end(); r++){
             if(r->first <= last_checked){
                 continue;
             }
 
             last_checked = r->first;
             json response = r->second;
-
-            std::cout << "Response id: " << last_checked << std::endl;
 
             if(!response.is_null() && (response["@type"] == "messages" || response["@type"] == "updateNewMessage" || response["@type"] == "message")){
                 // Controlla se il messaggio è un video

@@ -1,2 +1,1 @@
-- add delay after receiving requests
-- randomize session id when authenticating
+- let the client choose the chat from which to get the messages

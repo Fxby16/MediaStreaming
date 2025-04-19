@@ -34,22 +34,38 @@
   </div>
 
   <script>
-    const server = 'http://localhost:10000';
-    const session_id = 873624;
+    const server = `http://${window.location.hostname}:10000`;
+
+    console.log('Server:', server);
+
+    let session_id = 0;
 
     window.onload = function() {
-      checkState();
+      const cookie = document.cookie.split('; ').find(row => row.startsWith('session_id='));
+      if (cookie) {
+        session_id = cookie.split('=')[1];
+        console.log('Session ID from cookie:', session_id);
+        checkState();
+      } else {
+        sendApi();
+      }
     };
   
     function sendApi() {
-      const directory = "test_auth";
-  
       fetch(`${server}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directory, session_id })
+        body: JSON.stringify({ start_auth: true, session_id: Number(session_id) })
       })
-      .then(() => checkState());
+      .then(res => res.json())
+      .then(data => {
+        session_id = data['session_id'];
+        console.log('Session ID:', session_id);
+
+        document.cookie = `session_id=${session_id}; expires=Fri, 31 Dec 9999 23:59:59 GMT; path=/`;
+
+        checkState();
+      });
     }
   
     function sendPhone() {
@@ -84,6 +100,7 @@
           console.log('Current state:', state);
           switch (state['state']) {
             case 'authorizationStateWaitTdlibParameters':
+              console.log('Waiting for TDLib parameters...');
               sendApi();
               break;
             case 'authorizationStateWaitPassword':
@@ -133,7 +150,12 @@
       const video = document.createElement('video');
       video.src = `${server}/video?file_id=${file['id']}&session_id=${session_id}`;
       video.controls = true;
-      video.autoplay = true;
+      video.style.width = '100%';
+      video.style.height = 'auto';
+
+      console.log(video);
+      console.log('Video source:', video.src);
+
       videoContainer.appendChild(video);
     }
   </script>
