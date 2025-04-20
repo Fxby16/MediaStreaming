@@ -26,6 +26,40 @@ void setup_endpoints()
     mg_set_request_handler(ctx, "/auth", handle_auth, nullptr);
     mg_set_request_handler(ctx, "/auth/get_state", get_state, nullptr);
     mg_set_request_handler(ctx, "/logout", logout, nullptr);
+    mg_set_request_handler(ctx, "/get_chats", handle_chats, nullptr);
+}
+
+int handle_chats(struct mg_connection* conn, void*)
+{
+    const mg_request_info* req_info = mg_get_request_info(conn);
+
+    // Parse query string
+    std::string query_string = req_info->query_string ? req_info->query_string : "";
+    std::map<std::string, std::string> params = parse_query_string(query_string);
+
+    uint32_t session_id = 0;
+
+    // Extract the session_id parameter
+    if(params.find("session_id") != params.end()){
+        session_id = std::stoul(params["session_id"]);
+    }else{
+        std::cerr << "[ERROR] Missing session_id parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    std::vector<json> chats = get_chats(getSession(session_id));
+    std::string json_str = json(chats).dump();
+
+    mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+    mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+    mg_printf(conn, "Content-Type: application/json\r\n");
+    mg_printf(conn, "Content-Length: %zu\r\n", json_str.size());
+    mg_printf(conn, "\r\n");
+    mg_write(conn, json_str.c_str(), json_str.size());
+    return 200;
 }
 
 int handle_video(struct mg_connection* conn, void *)
@@ -166,6 +200,7 @@ int get_files(struct mg_connection* conn, void* data)
     std::map<std::string, std::string> params = parse_query_string(query_string);
 
     uint32_t session_id = 0;
+    std::string chat_id;
 
     // Extract the session_id parameter
     if(params.find("session_id") != params.end()){
@@ -178,8 +213,21 @@ int get_files(struct mg_connection* conn, void* data)
         return 400;
     }
 
+    // Extract the chat_id parameter
+    if(params.find("chat_id") != params.end()){
+        chat_id = params["chat_id"];
+    }else{
+        std::cerr << "[ERROR] Missing chat_id parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    std::cout << "Chat ID: " << chat_id << std::endl;
+
     std::shared_ptr<ClientSession> session = getSession(session_id);
-    std::vector<Video> videos = get_videos_from_channel(session, "-1002405503349", 0, 100);
+    std::vector<Video> videos = get_videos_from_channel(session, chat_id, 0, 100);
 
     json files_json;
     for(const auto &video : videos){
@@ -274,9 +322,6 @@ int handle_auth(struct mg_connection* conn, void* data)
                 std::string code = request_json["code"];
 
                 td_auth_send_code(session, code);
-
-                // Get chats to load ids. Needs to be removed and integrated in to client and endpoints
-                std::vector<json> chats = get_chats(session, 9223372036854775807, 0, 100);
 
                 mg_printf(conn, "HTTP/1.1 200 OK\r\n");
                 mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");

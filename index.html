@@ -39,6 +39,7 @@
     console.log('Server:', server);
 
     let session_id = 0;
+    let chats = [];
 
     window.onload = function() {
       const cookie = document.cookie.split('; ').find(row => row.startsWith('session_id='));
@@ -115,7 +116,7 @@
             case 'authorizationStateReady':
               document.getElementById('auth-container').style.display = 'none';
               document.getElementById('video-ui').style.display = 'block';
-              getFiles();
+              getChats();
               break;
             default:
               console.log('Unknown state:', state);
@@ -129,12 +130,20 @@
       document.getElementById(id).style.display = 'block';
     }
   
-    function getFiles() {
-      fetch(`${server}/get_files?session_id=${session_id}`)
+    function getFiles(chat_id) {
+      fetch(`${server}/get_files?session_id=${session_id}&chat_id=${chat_id}`)
         .then(res => res.json())
         .then(data => {
           const videoList = document.getElementById('video-list');
           videoList.innerHTML = '';
+          const backButton = document.createElement('button');
+          backButton.textContent = 'Back';
+          backButton.onclick = () => getChats();
+          videoList.appendChild(backButton);
+
+          console.log('Chat ID:', chat_id);
+          console.log(data);
+
           data.forEach(file => {
             const li = document.createElement('li');
             li.textContent = file['path'];
@@ -142,6 +151,38 @@
             videoList.appendChild(li);
           });
         });
+    }
+
+    function getChats() {
+      if(chats.length > 0) {
+        const videoList = document.getElementById('video-list');
+        videoList.innerHTML = '';
+        const backButton = document.createElement('button');
+        backButton.textContent = 'Back';
+        backButton.onclick = () => getChats();
+        videoList.appendChild(backButton);
+        console.log('Using cached chats:', chats);
+        chats.forEach(chat => {
+          const li = document.createElement('li');
+          li.textContent = chat['title'];
+          li.onclick = () => getFiles(chat['id']);
+          videoList.appendChild(li);
+        });
+      }else{
+        fetch(`${server}/get_chats?session_id=${session_id}`)
+        .then(res => res.json())
+        .then(data => {
+          const videoList = document.getElementById('video-list');
+          videoList.innerHTML = '';
+          chats = data;
+          data.forEach(chat => {
+            const li = document.createElement('li');
+            li.textContent = chat['title'];
+            li.onclick = () => getFiles(chat['id']);
+            videoList.appendChild(li);
+          });
+        }); 
+      } 
     }
   
     function playVideo(file) {

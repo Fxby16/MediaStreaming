@@ -3,7 +3,7 @@
 #include <td/telegram/td_json_client.h>
 #include <iostream>
 
-ClientSession::ClientSession() 
+ClientSession::ClientSession(uint32_t id): id(id) 
 {
     td_instance = td_json_client_create();
 
@@ -60,7 +60,7 @@ std::shared_ptr<ClientSession> getSession(uint32_t id)
         return it->second;
     }
 
-    auto session = std::make_shared<ClientSession>();
+    auto session = std::make_shared<ClientSession>(id);
     sessions[id] = session;
 
     return session;

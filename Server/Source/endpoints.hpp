@@ -6,3 +6,4 @@ extern int get_files(struct mg_connection* conn, void* data);
 extern int handle_auth(struct mg_connection* conn, void* data);
 extern int get_state(struct mg_connection* conn, void* data);
 extern int logout(struct mg_connection* conn, void* data);
+extern int handle_chats(struct mg_connection* conn, void* data);

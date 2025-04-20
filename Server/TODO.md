@@ -1,1 +1,1 @@
-- let the client choose the chat from which to get the messages
+- clean up this mess

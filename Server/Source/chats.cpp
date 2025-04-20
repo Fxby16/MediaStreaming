@@ -3,82 +3,75 @@
 
 #include <iostream>
 
-std::vector<json> get_chats(std::shared_ptr<ClientSession> session, uint64_t offset_order, uint64_t offset_chat_id, size_t limit)
+std::vector<json> get_chats(std::shared_ptr<ClientSession> session)
 {
+    std::vector<json> chats;
+    std::map<uint32_t, uint32_t> last_checked_map;
+
     session->send({
         {"@type", "getChats"},
-        {"offset_order", std::to_string(offset_order)}, 
-        {"offset_chat_id", offset_chat_id},
-        {"limit", limit}
+        {"offset_order", std::to_string(std::numeric_limits<uint64_t>::max())},
+        {"offset_chat_id", 0},
+        {"limit", std::numeric_limits<int>::max()}
     });
 
-    std::vector<json> chats;
+    bool received = false;
+    uint32_t session_id = session->getId();
 
-    std::cout << "[MESSAGE] Sending getChats request" << std::endl;
+    while(!received){
+        auto responses = session->getResponses()->get_all(last_checked_map[session_id]);
 
-    uint32_t last_checked = 0;
-    while (true){
-        auto responses = session->getResponses()->get_all(last_checked);
-        
-        for(auto r = responses.begin(); r != responses.end(); r++){
-            if(r->first <= last_checked){
-                continue;
-            }
-
-            last_checked = r->first;
+        for(auto r = responses.rbegin(); r != responses.rend(); r++){
             json response = r->second;
+            if(response.is_null()) continue;
 
-            if(!response.is_null()){
-                // Check if the response is the expected "chats" type
-                if(response.contains("@type") && response["@type"] == "chats"){
-                    for (const auto& chat_id : response["chat_ids"]){
-                        session->send({{"@type", "getChat"},
-                                {"chat_id", chat_id}});
+            if(response["@type"] == "chats"){
+                const auto& chat_ids = response["chat_ids"];
 
-                        std::cout << "[MESSAGE] Sending getChat request for chat_id: " << chat_id << std::endl;
+                if(chat_ids.empty()){
+                    return std::move(chats); // niente più chat
+                }
 
-                        size_t null_ctr = 0;
+                for(const auto& chat_id : chat_ids){
+                    session->send({{"@type", "getChat"}, 
+                                   {"chat_id", chat_id}});
 
-                        bool found = false;
-                        while(!found){
-                            auto responses_2 = session->getResponses()->get_all(last_checked);
+                    bool found = false;
+                    size_t null_ctr = 0;
+                    while(!found){
+                        auto chat_responses = session->getResponses()->get_all(last_checked_map[session_id]);
+                        for(auto cr = chat_responses.rbegin(); cr != chat_responses.rend(); cr++){
+                            json chat = cr->second;
 
-                            for(auto r2 = responses_2.begin(); r2 != responses_2.end(); r2++){
-                                if(r2->first <= last_checked){
-                                    continue;
-                                }
-
-                                last_checked = r2->first;
-                                json chat_response = r2->second;
-
-                                if(chat_response.is_null()){
-                                    null_ctr++;
-                                    if(null_ctr > 5){
-                                        std::cerr << "[ERROR] Failed to retrieve chat details for chat_id: " << chat_id << std::endl;
-                                        found = true;
-                                        break;
-                                    }
-                                }else{
-                                    null_ctr = 0;
-                                }
-
-                                if(!chat_response.is_null() && chat_response["@type"] == "updateNewChat"){
-                                    chat_response = chat_response["chat"];
-                                    chats.push_back(chat_response);
+                            if(chat.is_null()){
+                                null_ctr++;
+                                if(null_ctr > 5){
                                     found = true;
                                     break;
-                                }else if (!chat_response.is_null() && chat_response["@type"] == "chat"){
-                                    chats.push_back(chat_response);
-                                    found = true;
-                                    break;
-                                }else{
-                                    std::cerr << "[ERROR][NOT_NULL] Failed to retrieve chat details for chat_id: " << chat_id << std::endl;
                                 }
+                                continue;
+                            }
+
+                            null_ctr = 0;
+
+                            if(chat["@type"] == "chat"){
+                                json chat_info = {
+                                    {"id", chat["id"]},
+                                    {"title", chat["title"]},
+                                    {"type", chat["type"]["@type"]}
+                                };
+                                chats.push_back(chat_info);
+                                found = true;
+                                break;
                             }
                         }
+
+                        last_checked_map[session_id] = chat_responses.back().first;
                     }
-                    return std::move(chats);
                 }
+
+                received = true;
+                break; 
             }
         }
     }
@@ -89,6 +82,7 @@ std::vector<json> get_chats(std::shared_ptr<ClientSession> session, uint64_t off
 std::vector<Video> get_videos_from_channel(std::shared_ptr<ClientSession> session, const std::string &chat_id, int64_t from_message_id, int limit)
 {
     std::vector<Video> videos;
+    static std::map<uint32_t, uint32_t> last_checked_map;
 
     session->send({{"@type", "getChatHistory"},
         {"chat_id", std::stoll(chat_id)},
@@ -97,26 +91,25 @@ std::vector<Video> get_videos_from_channel(std::shared_ptr<ClientSession> sessio
         {"limit", limit},
         {"only_local", false}});
 
-    uint32_t last_checked = 0;
-    while (true){
-        auto responses = session->getResponses()->get_all(last_checked);
-        for(auto r = responses.begin(); r != responses.end(); r++){
-            if(r->first <= last_checked){
-                continue;
-            }
+    uint32_t session_id = session->getId();
 
-            last_checked = r->first;
+    while(true){
+        auto responses = session->getResponses()->get_all(last_checked_map[session_id]);
+        for(auto r = responses.begin(); r != responses.end(); r++){
             json response = r->second;
+            last_checked_map[session_id] = r->first; 
 
             if(!response.is_null() && (response["@type"] == "messages" || response["@type"] == "updateNewMessage" || response["@type"] == "message")){
+                std::cout << response.dump(4) << std::endl;
+                
                 // Controlla se il messaggio è un video
                 if(response["@type"] == "updateNewMessage"){
                     if(response["message"]["content"]["@type"] == "messageVideo"){
-                        std::string file_id = response["message"]["content"]["video"]["video"]["id"];
+                        unsigned int file_id = response["message"]["content"]["video"]["video"]["id"];
 
                         std::cout << "Video id: " << file_id << std::endl;
 
-                        videos.push_back(Video(std::stoul(file_id), response["message"]["content"]["video"]["video"]["mime_type"], response["message"]["content"]["video"]["video"]["file_name"]));
+                        videos.push_back(Video(file_id, response["message"]["content"]["video"]["video"]["mime_type"], response["message"]["content"]["video"]["video"]["file_name"]));
                     }
                 }
 

@@ -131,11 +131,13 @@ private:
 
 class ClientSession{
 public:
-    ClientSession();
+    ClientSession(uint32_t id);
     ~ClientSession();
 
     std::shared_ptr<CircularBuffer<json>> getResponses();
     void send(const json &j);
+
+    uint32_t getId() const { return id; }
 
 private:
     void* td_instance = nullptr;
@@ -143,6 +145,7 @@ private:
     std::thread listener_thread;
     std::shared_ptr<CircularBuffer<json>> responses;
     std::mutex send_mutex;
+    uint32_t id = 0;
 };
 
 extern std::shared_ptr<ClientSession> getSession(uint32_t id);
