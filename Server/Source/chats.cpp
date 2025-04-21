@@ -100,8 +100,6 @@ std::vector<Video> get_videos_from_channel(std::shared_ptr<ClientSession> sessio
             last_checked_map[session_id] = r->first; 
 
             if(!response.is_null() && (response["@type"] == "messages" || response["@type"] == "updateNewMessage" || response["@type"] == "message")){
-                std::cout << response.dump(4) << std::endl;
-                
                 // Controlla se il messaggio è un video
                 if(response["@type"] == "updateNewMessage"){
                     if(response["message"]["content"]["@type"] == "messageVideo"){

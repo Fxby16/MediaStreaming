@@ -10,9 +10,9 @@
 void td_auth_send_parameters(std::shared_ptr<ClientSession> session, const std::string& api_id, const std::string& api_hash, const std::string& directory)
 {
     session->send({{"@type", "setLogVerbosityLevel"},
-            {"new_verbosity_level", 1}});
+            {"new_verbosity_level", 0}});
 
-    std::cout << "[MESSAGE] TDLib log verbosity level set to 1" << std::endl;
+    std::cout << "[MESSAGE] TDLib log verbosity level set to 0" << std::endl;
 
     // Start authentication process
 
@@ -68,7 +68,9 @@ void td_auth_send_parameters(std::shared_ptr<ClientSession> session, const std::
         }
     }
 
-    while(td_auth_get_state(session) == "authorizationStateWaitTdlibParameters");
+    while(td_auth_get_state(session) == "authorizationStateWaitTdlibParameters"){
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
 }
 
 void td_auth_send_number(std::shared_ptr<ClientSession> session, const std::string &phone)
@@ -89,7 +91,9 @@ void td_auth_send_number(std::shared_ptr<ClientSession> session, const std::stri
         std::cout << "[MESSAGE] Phone number sent successfully!" << std::endl;
     }
 
-    while(td_auth_get_state(session) == "authorizationStateWaitPhoneNumber");
+    while(td_auth_get_state(session) == "authorizationStateWaitPhoneNumber"){
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
 }
 
 void td_auth_send_code(std::shared_ptr<ClientSession> session, const std::string &code)
@@ -110,7 +114,9 @@ void td_auth_send_code(std::shared_ptr<ClientSession> session, const std::string
         std::cout << "[MESSAGE] Code sent successfully!\n";
     }
 
-    while(td_auth_get_state(session) == "authorizationStateWaitCode");
+    while(td_auth_get_state(session) == "authorizationStateWaitCode"){
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
 }
 
 void td_auth_send_password(std::shared_ptr<ClientSession> session, const std::string &password)
@@ -128,7 +134,9 @@ void td_auth_send_password(std::shared_ptr<ClientSession> session, const std::st
             {"password", password}});
     }
 
-    while(td_auth_get_state(session) == "authorizationStateWaitPassword");
+    while(td_auth_get_state(session) == "authorizationStateWaitPassword"){
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
 }
 
 std::string td_auth_get_state(std::shared_ptr<ClientSession> session)
@@ -168,6 +176,9 @@ std::string td_auth_get_state(std::shared_ptr<ClientSession> session)
                 return state;
             }else if(r["@type"] == "authorizationStateReady"){
                 state = "authorizationStateReady";
+                return state;
+            }else if(r["@type"] == "authorizationStateClosed"){
+                state = "authorizationStateClosed";
                 return state;
             }
         }

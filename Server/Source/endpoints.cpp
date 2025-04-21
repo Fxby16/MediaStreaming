@@ -409,7 +409,6 @@ int get_state(struct mg_connection* conn, void* data)
     return 200;
 }
 
-//NEEDS TO BE TESTED
 int logout(struct mg_connection *conn, void *data)
 {
     const mg_request_info* req_info = mg_get_request_info(conn);
@@ -433,15 +432,20 @@ int logout(struct mg_connection *conn, void *data)
     std::shared_ptr<ClientSession> session = getSession(session_id);
 
     session->send({{"@type", "logOut"}});
-    std::string state = td_auth_get_state(session);
+    
+    std::cout << "[MESSAGE] Logging out..." << std::endl;
 
-    if(state != "AuthorizationStateClosed"){
-        std::cerr << "[ERROR] Failed to log out." << std::endl;
+    while(td_auth_get_state(session) != "authorizationStateClosed"){
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
+
+    std::cout << "[MESSAGE] Logged out successfully!" << std::endl;
 
     session->send({{"@type", "close"}});
 
     closeSession(session_id);
+
+    std::cout << "[MESSAGE] Session closed!" << std::endl;
 
     std::filesystem::path session_dir = std::filesystem::path("UserData") / std::to_string(session_id);
 
