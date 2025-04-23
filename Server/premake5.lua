@@ -10,7 +10,7 @@ project "MediaStreamingServer"
     files { "Source/**.cpp", "Source/**.h" }
     includedirs { "Source" }
 
-    links { "civetweb", "tdjson"}
+    links { "civetweb", "tdjson", "mysqlclient", "curl" }
 
     filter "configurations:Debug"
         defines { "DEBUG" }

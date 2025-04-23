@@ -79,9 +79,9 @@ std::vector<json> get_chats(std::shared_ptr<ClientSession> session)
     return std::move(chats);
 }
 
-std::vector<Video> get_videos_from_channel(std::shared_ptr<ClientSession> session, const std::string &chat_id, int64_t from_message_id, int limit)
+std::vector<json> get_videos_from_channel(std::shared_ptr<ClientSession> session, const std::string &chat_id, int64_t from_message_id, int limit)
 {
-    std::vector<Video> videos;
+    std::vector<json> videos;
     static std::map<uint32_t, uint32_t> last_checked_map;
 
     session->send({{"@type", "getChatHistory"},
@@ -101,7 +101,7 @@ std::vector<Video> get_videos_from_channel(std::shared_ptr<ClientSession> sessio
 
             if(!response.is_null() && (response["@type"] == "messages" || response["@type"] == "updateNewMessage" || response["@type"] == "message")){
                 // Controlla se il messaggio è un video
-                if(response["@type"] == "updateNewMessage"){
+                /*if(response["@type"] == "updateNewMessage"){
                     if(response["message"]["content"]["@type"] == "messageVideo"){
                         unsigned int file_id = response["message"]["content"]["video"]["video"]["id"];
 
@@ -109,7 +109,7 @@ std::vector<Video> get_videos_from_channel(std::shared_ptr<ClientSession> sessio
 
                         videos.push_back(Video(file_id, response["message"]["content"]["video"]["video"]["mime_type"], response["message"]["content"]["video"]["video"]["file_name"]));
                     }
-                }
+                }*/
 
                 if(response["@type"] == "messages"){
                     // Scorri i messaggi e cerca i video
@@ -117,9 +117,14 @@ std::vector<Video> get_videos_from_channel(std::shared_ptr<ClientSession> sessio
                         if(message["content"]["@type"] == "messageVideo"){
                             unsigned int file_id = message["content"]["video"]["video"]["id"];
 
-                            std::cout << "Video id 2: " << file_id << std::endl;
+                            json video_info = {
+                                {"id", file_id},
+                                {"mime_type", message["content"]["video"]["mime_type"]},
+                                {"file_name", message["content"]["video"]["file_name"]},
+                                {"remote_id", message["content"]["video"]["video"]["remote"]["id"]}
+                            };
 
-                            videos.push_back(Video(file_id, message["content"]["video"]["mime_type"], message["content"]["video"]["file_name"]));
+                            videos.push_back(video_info);
                         }
                     }
 

@@ -158,7 +158,7 @@
 
           data.forEach(file => {
             const li = document.createElement('li');
-            li.textContent = file['path'];
+            li.textContent = file['file_name'] + ' ' + file["remote_id"];
             li.onclick = () => playVideo(file);
             videoList.appendChild(li);
           });
@@ -200,14 +200,18 @@
     function playVideo(file) {
       const videoContainer = document.getElementById('video-container');
       videoContainer.innerHTML = '';
+
       const video = document.createElement('video');
-      video.src = `${server}/video?file_id=${file['id']}&session_id=${session_id}`;
       video.controls = true;
       video.style.width = '100%';
       video.style.height = 'auto';
 
-      console.log(video);
-      console.log('Video source:', video.src);
+      const source = document.createElement('source');
+      source.src = `${server}/video?file_id=${file['id']}&session_id=${session_id}`;
+      source.type = file['mime_type'];
+
+      video.appendChild(source);
+      videoContainer.appendChild(video);
 
       videoContainer.appendChild(video);
     }

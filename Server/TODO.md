@@ -1,1 +1,5 @@
 - clean up this mess
+- endpoint to get user info after login
+- reload movies and tv shows data from tmdb after some time to ensure they are up to date
+- test /set_movie_data and /set_tv_show_data endpoints
+- check all json keys before accessing them to ensure they exist and avoid crashing

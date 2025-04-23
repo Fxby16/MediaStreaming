@@ -5,6 +5,8 @@
 #include "app_data.hpp"
 #include "session.hpp"
 #include "random.hpp"
+#include "tmdb.hpp"
+#include "db.hpp"
 
 #include <civetweb.h>
 #include <iostream>
@@ -21,12 +23,48 @@ void setup_endpoints()
     mg_callbacks callbacks = {};
     mg_context *ctx = mg_start(&callbacks, nullptr, options);
 
+    //telegram
     mg_set_request_handler(ctx, "/get_files", get_files, nullptr);
     mg_set_request_handler(ctx, "/video", handle_video, nullptr);
     mg_set_request_handler(ctx, "/auth", handle_auth, nullptr);
     mg_set_request_handler(ctx, "/auth/get_state", get_state, nullptr);
     mg_set_request_handler(ctx, "/logout", logout, nullptr);
     mg_set_request_handler(ctx, "/get_chats", handle_chats, nullptr);
+
+    //tmdb
+    mg_set_request_handler(ctx, "/search_movie", search_movie_handler, nullptr);
+    mg_set_request_handler(ctx, "/search_tv_show", search_tv_show_handler, nullptr);
+    mg_set_request_handler(ctx, "/get_movie_details", get_movie_details_handler, nullptr);
+    mg_set_request_handler(ctx, "/get_tv_show_details", get_tv_show_details_handler, nullptr);
+    mg_set_request_handler(ctx, "/get_tv_show_season", get_tv_show_season_handler, nullptr);
+    mg_set_request_handler(ctx, "/get_movie_cast", get_movie_cast_handler, nullptr);
+    mg_set_request_handler(ctx, "/get_tv_show_cast", get_tv_show_cast_handler, nullptr);
+    mg_set_request_handler(ctx, "/get_person_details", get_person_details_handler, nullptr);
+
+    mg_set_request_handler(ctx, "/set_movie_data", set_movie_data_handler, nullptr);
+    mg_set_request_handler(ctx, "/set_tv_show_data", set_tv_show_data_handler, nullptr);
+
+    add_genres("it");
+}
+
+void add_genres(const std::string& language)
+{
+    json result = db_select("SELECT * FROM genres");
+    if(!result.empty()){
+        std::cout << "Genres already present in the database." << std::endl;
+        return;
+    }
+
+    json genres = get_movie_genres(language);
+    json genres_tv = get_tv_show_genres(language);
+
+    for(const auto& genre : genres["genres"]){
+        db_execute("INSERT IGNORE INTO genres (genre_id, name) VALUES (" + std::to_string(genre["id"].get<int>()) + ", '" + genre["name"].get<std::string>() + "')");
+    }
+
+    for(const auto& genre : genres_tv["genres"]){
+        db_execute("INSERT IGNORE INTO genres (genre_id, name) VALUES (" + std::to_string(genre["id"].get<int>()) + ", '" + genre["name"].get<std::string>() + "')");
+    }
 }
 
 int handle_chats(struct mg_connection* conn, void*)
@@ -227,13 +265,11 @@ int get_files(struct mg_connection* conn, void* data)
     std::cout << "Chat ID: " << chat_id << std::endl;
 
     std::shared_ptr<ClientSession> session = getSession(session_id);
-    std::vector<Video> videos = get_videos_from_channel(session, chat_id, 0, 100);
+    std::vector<json> videos = get_videos_from_channel(session, chat_id, 0, 100);
 
     json files_json;
     for(const auto &video : videos){
-        files_json.push_back({{"id", video.file_id},
-                              {"mime_type", video.mime_type},
-                              {"path", video.path}});
+        files_json.push_back(video);
     }
 
     std::string json_str = files_json.dump();
@@ -275,7 +311,7 @@ int handle_auth(struct mg_connection* conn, void* data)
                 std::string directory = std::to_string(session_id);
 
                 session->send({{"@type", "getAuthorizationState"}});
-                td_auth_send_parameters(session, API_ID, API_HASH, directory);
+                td_auth_send_parameters(session, APP_API_ID, APP_API_HASH, directory);
 
                 mg_printf(conn, "HTTP/1.1 200 OK\r\n");
                 mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
@@ -463,3 +499,837 @@ int logout(struct mg_connection *conn, void *data)
 
     return 200;
 }
+
+int search_movie_handler(struct mg_connection* conn, void* data)
+{
+    std::cout << "[MESSAGE] Search movie handler called" << std::endl;
+
+    const mg_request_info* req_info = mg_get_request_info(conn);
+
+    // Parse query string
+    std::string query_string = req_info->query_string ? req_info->query_string : "";
+    std::map<std::string, std::string> params = parse_query_string(query_string);
+
+    std::string title;
+    std::string language;
+
+    // Extract the title parameter
+    if(params.find("title") != params.end()){
+        title = params["title"];
+    }else{
+        std::cerr << "[ERROR] Missing title parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    // Extract the language parameter
+    if(params.find("language") != params.end()){
+        language = params["language"];
+    }else{
+        std::cerr << "[ERROR] Missing language parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    json result = search_movie(title, language);
+    
+    std::string json_str = result.dump();
+
+    mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+    mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+    mg_printf(conn, "Content-Type: application/json\r\n");
+    mg_printf(conn, "Content-Length: %zu\r\n", json_str.size());
+    mg_printf(conn, "\r\n");
+
+    mg_write(conn, json_str.c_str(), json_str.size());
+
+    return 200;
+}
+
+int search_tv_show_handler(struct mg_connection* conn, void* data)
+{
+    const mg_request_info* req_info = mg_get_request_info(conn);
+
+    // Parse query string
+    std::string query_string = req_info->query_string ? req_info->query_string : "";
+    std::map<std::string, std::string> params = parse_query_string(query_string);
+
+    std::string title;
+    std::string language;
+
+    // Extract the title parameter
+    if(params.find("title") != params.end()){
+        title = params["title"];
+    }else{
+        std::cerr << "[ERROR] Missing title parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    // Extract the language parameter
+    if(params.find("language") != params.end()){
+        language = params["language"];
+    }else{
+        std::cerr << "[ERROR] Missing language parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    json result = search_tv_show(title, language);
+    
+    std::string json_str = result.dump();
+
+    mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+    mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+    mg_printf(conn, "Content-Type: application/json\r\n");
+    mg_printf(conn, "Content-Length: %zu\r\n", json_str.size());
+    mg_printf(conn, "\r\n");
+
+    mg_write(conn, json_str.c_str(), json_str.size());
+
+    return 200;
+}
+
+int get_movie_details_handler(struct mg_connection* conn, void* data)
+{
+    const mg_request_info* req_info = mg_get_request_info(conn);
+
+    // Parse query string
+    std::string query_string = req_info->query_string ? req_info->query_string : "";
+    std::map<std::string, std::string> params = parse_query_string(query_string);
+
+    int id;
+    std::string language;
+
+    // Extract the id parameter
+    if(params.find("id") != params.end()){
+        id = std::stoi(params["id"]);
+    }else{
+        std::cerr << "[ERROR] Missing id parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    // Extract the language parameter
+    if(params.find("language") != params.end()){
+        language = params["language"];
+    }else{
+        std::cerr << "[ERROR] Missing language parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    json result = db_select("SELECT * FROM movies WHERE movie_id = " + std::to_string(id));
+    if(result.empty()){
+        json tmdb_result = get_movie_details(id, language);
+        if(tmdb_result.empty()){
+            mg_printf(conn, "HTTP/1.1 404 Not Found\r\n");
+            mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+            mg_printf(conn, "\r\n");
+            return 404;
+        }
+
+        std::string insert_query = "INSERT INTO movies (movie_id, streaming_id, title, overview, release_date, runtime, status, popularity, vote_average, vote_count, poster_path, backdrop_path, adult, imdb_id, homepage, video, last_update) VALUES (" +
+                       std::to_string(tmdb_result["id"].get<int>()) + ", " +
+                       "NULL, '" +
+                       escape_string(tmdb_result["title"].get<std::string>()) + "', '" +
+                       escape_string(tmdb_result["overview"].get<std::string>()) + "', '" +
+                       tmdb_result["release_date"].get<std::string>() + "', " +
+                       std::to_string(tmdb_result["runtime"].get<int>()) + ", '" +
+                       tmdb_result["status"].get<std::string>() + "', " +
+                       std::to_string(tmdb_result["popularity"].get<double>()) + ", " +
+                       std::to_string(tmdb_result["vote_average"].get<double>()) + ", " +
+                       std::to_string(tmdb_result["vote_count"].get<int>()) + ", '" +
+                       tmdb_result["poster_path"].get<std::string>() + "', '" +
+                       tmdb_result["backdrop_path"].get<std::string>() + "', " +
+                       (tmdb_result["adult"].get<bool>() ? "1" : "0") + ", '" +
+                       tmdb_result["imdb_id"].get<std::string>() + "', '" +
+                       tmdb_result["homepage"].get<std::string>() + "', " +
+                       (tmdb_result["video"].get<bool>() ? "1" : "0") + ", " +
+                       "CURRENT_TIMESTAMP);";
+
+        db_execute(insert_query);
+
+        for(const auto& genre : tmdb_result["genres"]){
+            db_execute("INSERT INTO movie_genres (movie_id, genre_id) VALUES (" + std::to_string(tmdb_result["id"].get<int>()) + ", " + std::to_string(genre["id"].get<int>()) + ")");
+        }
+
+        result = db_select("SELECT * FROM movies WHERE movie_id = " + std::to_string(id)).front();
+        result["genres"] = db_select("SELECT genre_id FROM movie_genres WHERE movie_id = " + std::to_string(id));
+    }
+
+    std::string json_str = result.dump();
+
+    mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+    mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+    mg_printf(conn, "Content-Type: application/json\r\n");
+    mg_printf(conn, "Content-Length: %zu\r\n", json_str.size());
+    mg_printf(conn, "\r\n");
+
+    mg_write(conn, json_str.c_str(), json_str.size());
+
+    return 200;
+}
+
+int get_tv_show_details_handler(struct mg_connection* conn, void* data)
+{
+    const mg_request_info* req_info = mg_get_request_info(conn);
+
+    // Parse query string
+    std::string query_string = req_info->query_string ? req_info->query_string : "";
+    std::map<std::string, std::string> params = parse_query_string(query_string);
+
+    int id;
+    std::string language;
+
+    // Extract the id parameter
+    if(params.find("id") != params.end()){
+        id = std::stoi(params["id"]);
+    }else{
+        std::cerr << "[ERROR] Missing id parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    // Extract the language parameter
+    if(params.find("language") != params.end()){
+        language = params["language"];
+    }else{
+        std::cerr << "[ERROR] Missing language parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    json result = db_select("SELECT * FROM tv_shows WHERE tv_id = " + std::to_string(id));
+    if(result.empty()){
+        json tmdb_result = get_tv_show_details(id, language);
+        if(tmdb_result.empty()){
+            mg_printf(conn, "HTTP/1.1 404 Not Found\r\n");
+            mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+            mg_printf(conn, "\r\n");
+            return 404;
+        }
+
+        std::string insert_query = "INSERT INTO tv_shows (tv_id, name, overview, first_air_date, last_air_date, number_of_seasons, number_of_episodes, status, popularity, vote_average, vote_count, poster_path, backdrop_path, homepage, in_production, type, last_update) VALUES (" +
+                       std::to_string(tmdb_result["id"].get<int>()) + ", '" +
+                       escape_string(tmdb_result["name"].get<std::string>()) + "', '" +
+                       escape_string(tmdb_result["overview"].get<std::string>()) + "', '" +
+                       tmdb_result["first_air_date"].get<std::string>() + "', '" +
+                       tmdb_result["last_air_date"].get<std::string>() + "', " +
+                       std::to_string(tmdb_result["number_of_seasons"].get<int>()) + ", " +
+                       std::to_string(tmdb_result["number_of_episodes"].get<int>()) + ", '" +
+                       tmdb_result["status"].get<std::string>() + "', " +
+                       std::to_string(tmdb_result["popularity"].get<double>()) + ", " +
+                       std::to_string(tmdb_result["vote_average"].get<double>()) + ", " +
+                       std::to_string(tmdb_result["vote_count"].get<int>()) + ", '" +
+                       tmdb_result["poster_path"].get<std::string>() + "', '" +
+                       tmdb_result["backdrop_path"].get<std::string>() + "', '" +
+                       tmdb_result["homepage"].get<std::string>() + "', " +
+                       (tmdb_result["in_production"].get<bool>() ? "1" : "0") + ", '" +
+                       tmdb_result["type"].get<std::string>() + "', " +
+                       "CURRENT_TIMESTAMP);";
+
+        db_execute(insert_query);
+
+        for(const auto& genre : tmdb_result["genres"]){
+            db_execute("INSERT INTO tv_show_genres (tv_id, genre_id) VALUES (" + std::to_string(tmdb_result["id"].get<int>()) + ", " + std::to_string(genre["id"].get<int>()) + ")");
+        }
+
+        result = db_select("SELECT * FROM tv_shows WHERE tv_id = " + std::to_string(id)).front();
+        result["genres"] = db_select("SELECT genre_id FROM tv_show_genres WHERE tv_id = " + std::to_string(id));
+    }
+
+    std::string json_str = result.dump();
+
+    mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+    mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+    mg_printf(conn, "Content-Type: application/json\r\n");
+    mg_printf(conn, "Content-Length: %zu\r\n", json_str.size());
+    mg_printf(conn, "\r\n");
+
+    mg_write(conn, json_str.c_str(), json_str.size());
+
+    return 200;
+}
+
+int get_tv_show_season_handler(struct mg_connection* conn, void* data)
+{
+    std::cout << "[MESSAGE] Get TV show season handler called" << std::endl;
+
+    const mg_request_info* req_info = mg_get_request_info(conn);
+
+    // Parse query string
+    std::string query_string = req_info->query_string ? req_info->query_string : "";
+    std::map<std::string, std::string> params = parse_query_string(query_string);
+
+    int id;
+    int season_number;
+    std::string language;
+
+    // Extract the id parameter
+    if(params.find("id") != params.end()){
+        id = std::stoi(params["id"]);
+    }else{
+        std::cerr << "[ERROR] Missing id parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    // Extract the season_number parameter
+    if(params.find("season_number") != params.end()){
+        season_number = std::stoi(params["season_number"]);
+    }else{
+        std::cerr << "[ERROR] Missing season_number parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    // Extract the language parameter
+    if(params.find("language") != params.end()){
+        language = params["language"];
+    }else{
+        std::cerr << "[ERROR] Missing language parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    json result;
+    result["episodes"] = db_select("SELECT * FROM episodes, seasons WHERE episodes.season_id = seasons.season_id AND episodes.tv_id = " + std::to_string(id) + " AND seasons.season_number = " + std::to_string(season_number) + ";");
+    result["season"] = db_select("SELECT * FROM seasons WHERE tv_id = " + std::to_string(id) + " AND season_number = " + std::to_string(season_number)).front();
+    
+    if(result["episodes"].empty()){
+        json tmdb_result = get_tv_show_season(id, season_number, language);
+
+        if(tmdb_result.empty()){
+            mg_printf(conn, "HTTP/1.1 404 Not Found\r\n");
+            mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+            mg_printf(conn, "\r\n");
+            return 404;
+        }
+
+        json season_result = db_select("SELECT * FROM seasons WHERE tv_id = " + std::to_string(id) + " AND season_id = " + std::to_string(tmdb_result["id"].get<int>()));
+        if(season_result.empty()){
+            int episodes_count = tmdb_result["episodes"].size();
+
+            std::string insert_season_query = "INSERT INTO seasons (season_id, tv_id, season_number, name, overview, air_date, episode_count, poster_path, last_update) VALUES (" +
+                                              std::to_string(tmdb_result["id"].get<int>()) + ", " +
+                                              std::to_string(id) + ", " +
+                                              std::to_string(tmdb_result["season_number"].get<int>()) + ", '" +
+                                              escape_string(tmdb_result["name"].get<std::string>()) + "', '" +
+                                              escape_string(tmdb_result["overview"].get<std::string>()) + "', '" +
+                                              tmdb_result["air_date"].get<std::string>() + "', " +
+                                              std::to_string(episodes_count) + ", '" +
+                                              tmdb_result["poster_path"].get<std::string>() + "', " +
+                                              "CURRENT_TIMESTAMP);";
+
+            db_execute(insert_season_query);
+        }
+
+        for(const auto& episode : tmdb_result["episodes"]){
+            json episode_result = db_select("SELECT * FROM episodes WHERE episode_id = " + std::to_string(episode["id"].get<int>()));
+            if(episode_result.empty()){
+                std::string insert_episode_query = "INSERT INTO episodes (episode_id, streaming_id, season_id, episode_number, name, overview, air_date, runtime, vote_average, vote_count, still_path, last_update, tv_id) VALUES (" +
+                                                    std::to_string(episode["id"].get<int>()) + ", " +
+                                                    "NULL, " +
+                                                    std::to_string(tmdb_result["id"].get<int>()) + ", " +
+                                                    std::to_string(episode["episode_number"].get<int>()) + ", '" +
+                                                    escape_string(episode["name"].get<std::string>()) + "', '" +
+                                                    escape_string(episode["overview"].get<std::string>()) + "', '" +
+                                                    episode["air_date"].get<std::string>() + "', " +
+                                                    std::to_string(episode["runtime"].get<int>()) + ", " +
+                                                    std::to_string(episode["vote_average"].get<double>()) + ", " +
+                                                    std::to_string(episode["vote_count"].get<int>()) + ", '" +
+                                                    episode["still_path"].get<std::string>() + "', " +
+                                                    "CURRENT_TIMESTAMP, " +
+                                                    std::to_string(id) + ");";
+
+                db_execute(insert_episode_query);
+            }
+        }
+
+        result["episodes"] = db_select("SELECT * FROM episodes, seasons WHERE episodes.season_id = seasons.season_id AND episodes.tv_id = " + std::to_string(id) + " AND seasons.season_number = " + std::to_string(season_number) + ";");
+        result["season"] = db_select("SELECT * FROM seasons WHERE tv_id = " + std::to_string(id) + " AND season_number = " + std::to_string(season_number));
+    }
+
+    std::string json_str = result.dump();
+    mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+    mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+    mg_printf(conn, "Content-Type: application/json\r\n");
+    mg_printf(conn, "Content-Length: %zu\r\n", json_str.size());
+    mg_printf(conn, "\r\n");
+    mg_write(conn, json_str.c_str(), json_str.size());
+    return 200;
+}
+
+int get_movie_cast_handler(struct mg_connection* conn, void* data)
+{
+    const mg_request_info* req_info = mg_get_request_info(conn);
+
+    // Parse query string
+    std::string query_string = req_info->query_string ? req_info->query_string : "";
+    std::map<std::string, std::string> params = parse_query_string(query_string);
+
+    int id;
+    std::string language;
+
+    // Extract the id parameter
+    if(params.find("id") != params.end()){
+        id = std::stoi(params["id"]);
+    }else{
+        std::cerr << "[ERROR] Missing id parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    // Extract the language parameter
+    if(params.find("language") != params.end()){
+        language = params["language"];
+    }else{
+        std::cerr << "[ERROR] Missing language parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    json result;
+    json tmdb_result = get_movie_cast(id);
+
+    if(tmdb_result.empty()){
+        mg_printf(conn, "HTTP/1.1 404 Not Found\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 404;
+    }
+
+    for(const auto& cast : tmdb_result["cast"]){
+        json cast_result = db_select("SELECT * FROM movie_cast WHERE credit_id = '" + cast["credit_id"].get<std::string>() + "'");
+
+        if(!cast_result.empty()){
+            continue;
+        }
+
+        json person = db_select("SELECT * FROM people WHERE person_id = " + std::to_string(cast["id"].get<int>()));
+        if(person.empty()){
+            json tmdb_person = get_person_details(cast["id"].get<int>(), language);
+            if(tmdb_person.empty()){
+                mg_printf(conn, "HTTP/1.1 404 Not Found\r\n");
+                mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+                mg_printf(conn, "\r\n");
+                return 404;
+            }
+
+            std::string homepage = tmdb_person["homepage"].is_null() ? "NULL" : "'" + tmdb_person["homepage"].get<std::string>() + "'";
+            std::string profile_path = tmdb_person["profile_path"].is_null() ? "NULL" : "'" + tmdb_person["profile_path"].get<std::string>() + "'";
+            std::string imdb_id = tmdb_person["imdb_id"].is_null() ? "NULL" : "'" + tmdb_person["imdb_id"].get<std::string>() + "'";
+            std::string insert_query = "INSERT INTO people (person_id, name, gender, biography, birthday, deathday, known_for_department, popularity, profile_path, imdb_id, homepage, last_update) VALUES (" +
+                                        std::to_string(tmdb_person["id"].get<int>()) + ", '" +
+                                        escape_string(tmdb_person["name"].get<std::string>()) + "', " +
+                                        std::to_string(tmdb_person["gender"].get<int>()) + ", '" +
+                                        escape_string(tmdb_person["biography"].get<std::string>()) + "', " +
+                                        (tmdb_person["birthday"].is_null() ? "NULL" : "'" + tmdb_person["birthday"].get<std::string>() + "'") + ", " +
+                                        (tmdb_person["deathday"].is_null() ? "NULL" : "'" + tmdb_person["deathday"].get<std::string>() + "'") + ", '" +
+                                        tmdb_person["known_for_department"].get<std::string>() + "', " +
+                                        std::to_string(tmdb_person["popularity"].get<double>()) + ", " +
+                                        profile_path + ", " +
+                                        imdb_id + "," +
+                                        homepage + ", " +
+                                        "CURRENT_TIMESTAMP);";
+
+            db_execute(insert_query);
+        }
+
+        std::string job = !cast.contains("job") ? "NULL" : "'" + cast["job"].get<std::string>() + "'";
+        std::string insert_cast_query = "INSERT INTO movie_cast (movie_id, person_id, `character`, credit_id, `order`, department, job, last_update) VALUES (" +
+                                        std::to_string(id) + ", " +
+                                        std::to_string(cast["id"].get<int>()) + ", '" +
+                                        escape_string(cast["character"].get<std::string>()) + "', '" +
+                                        cast["credit_id"].get<std::string>() + "', " +
+                                        std::to_string(cast["order"].get<int>()) + ", '" +
+                                        cast["known_for_department"].get<std::string>() + "', " +
+                                        job + ", " +
+                                        "CURRENT_TIMESTAMP);";
+
+        db_execute(insert_cast_query);
+    }
+
+    for(const auto& cast : tmdb_result["crew"]){
+        json cast_result = db_select("SELECT * FROM movie_cast WHERE credit_id = '" + cast["credit_id"].get<std::string>() + "'");
+
+        if(!cast_result.empty()){
+            continue;
+        }
+
+        json person = db_select("SELECT * FROM people WHERE person_id = " + std::to_string(cast["id"].get<int>()));
+        if(person.empty()){
+            json tmdb_person = get_person_details(cast["id"].get<int>(), language);
+            if(tmdb_person.empty()){
+                mg_printf(conn, "HTTP/1.1 404 Not Found\r\n");
+                mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+                mg_printf(conn, "\r\n");
+                return 404;
+            }
+
+            std::string homepage = tmdb_person["homepage"].is_null() ? "NULL" : "'" + tmdb_person["homepage"].get<std::string>() + "'";
+            std::string profile_path = tmdb_person["profile_path"].is_null() ? "NULL" : "'" + tmdb_person["profile_path"].get<std::string>() + "'";
+            std::string imdb_id = tmdb_person["imdb_id"].is_null() ? "NULL" : "'" + tmdb_person["imdb_id"].get<std::string>() + "'";
+            std::string insert_query = "INSERT INTO people (person_id, name, gender, biography, birthday, deathday, known_for_department, popularity, profile_path, imdb_id, homepage, last_update) VALUES (" +
+                                        std::to_string(tmdb_person["id"].get<int>()) + ", '" +
+                                        escape_string(tmdb_person["name"].get<std::string>()) + "', " +
+                                        std::to_string(tmdb_person["gender"].get<int>()) + ", '" +
+                                        escape_string(tmdb_person["biography"].get<std::string>()) + "', " +
+                                        (tmdb_person["birthday"].is_null() ? "NULL" : "'" + tmdb_person["birthday"].get<std::string>() + "'") + ", " +
+                                        (tmdb_person["deathday"].is_null() ? "NULL" : "'" + tmdb_person["deathday"].get<std::string>() + "'") + ", '" +
+                                        tmdb_person["known_for_department"].get<std::string>() + "', " +
+                                        std::to_string(tmdb_person["popularity"].get<double>()) + ", " +
+                                        profile_path + ", " +
+                                        imdb_id + "," +
+                                        homepage + ", " +
+                                        "CURRENT_TIMESTAMP);";
+
+            db_execute(insert_query);
+        }
+
+        std::string job = !cast.contains("job") ? "NULL" : "'" + cast["job"].get<std::string>() + "'";
+        int order = !cast.contains("order") ? -1 : cast["order"].get<int>();
+        std::string insert_cast_query = "INSERT INTO movie_cast (movie_id, person_id, `character`, credit_id, `order`, department, job, last_update) VALUES (" +
+                                        std::to_string(id) + ", " +
+                                        std::to_string(cast["id"].get<int>()) + ", '" +
+                                        "NULL" + "', '" +
+                                        cast["credit_id"].get<std::string>() + "', " +
+                                        std::to_string(order) + ", '" +
+                                        cast["known_for_department"].get<std::string>() + "', " +
+                                        job + ", " +
+                                        "CURRENT_TIMESTAMP);";
+
+        db_execute(insert_cast_query);
+    }
+
+    result = db_select("SELECT * FROM movie_cast WHERE movie_id = " + std::to_string(id) + " ORDER BY `order` ASC;");
+
+    std::string json_str = result.dump();
+    mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+    mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+    mg_printf(conn, "Content-Type: application/json\r\n");
+    mg_printf(conn, "Content-Length: %zu\r\n", json_str.size());
+    mg_printf(conn, "\r\n");
+    mg_write(conn, json_str.c_str(), json_str.size());
+    return 200;
+}
+
+int get_tv_show_cast_handler(struct mg_connection* conn, void* data)
+{
+    const mg_request_info* req_info = mg_get_request_info(conn);
+
+    // Parse query string
+    std::string query_string = req_info->query_string ? req_info->query_string : "";
+    std::map<std::string, std::string> params = parse_query_string(query_string);
+
+    int id;
+    std::string language;
+
+    // Extract the id parameter
+    if(params.find("id") != params.end()){
+        id = std::stoi(params["id"]);
+    }else{
+        std::cerr << "[ERROR] Missing id parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    // Extract the language parameter
+    if(params.find("language") != params.end()){
+        language = params["language"];
+    }else{
+        std::cerr << "[ERROR] Missing language parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    json result;
+    
+    json tmdb_result = get_tv_show_cast(id);
+    if(tmdb_result.empty()){
+        mg_printf(conn, "HTTP/1.1 404 Not Found\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 404;
+    }
+
+    for(const auto& cast : tmdb_result["cast"]){
+        json cast_result = db_select("SELECT * FROM tv_show_cast WHERE credit_id = '" + cast["credit_id"].get<std::string>() + "'");
+
+        if(!cast_result.empty()){
+            continue;
+        }
+
+        json person = db_select("SELECT * FROM people WHERE person_id = " + std::to_string(cast["id"].get<int>()));
+        if(person.empty()){
+            json tmdb_person = get_person_details(cast["id"].get<int>(), language);
+            if(tmdb_person.empty()){
+                mg_printf(conn, "HTTP/1.1 404 Not Found\r\n");
+                mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+                mg_printf(conn, "\r\n");
+                return 404;
+            }
+
+            std::string homepage = tmdb_person["homepage"].is_null() ? "NULL" : "'" + tmdb_person["homepage"].get<std::string>() + "'";
+            std::string profile_path = tmdb_person["profile_path"].is_null() ? "NULL" : "'" + tmdb_person["profile_path"].get<std::string>() + "'";
+            std::string imdb_id = tmdb_person["imdb_id"].is_null() ? "NULL" : "'" + tmdb_person["imdb_id"].get<std::string>() + "'";
+            std::string insert_query = "INSERT INTO people (person_id, name, gender, biography, birthday, deathday, known_for_department, popularity, profile_path, imdb_id, homepage, last_update) VALUES (" +
+                                        std::to_string(tmdb_person["id"].get<int>()) + ", '" +
+                                        escape_string(tmdb_person["name"].get<std::string>()) + "', " +
+                                        std::to_string(tmdb_person["gender"].get<int>()) + ", '" +
+                                        escape_string(tmdb_person["biography"].get<std::string>()) + "', " +
+                                        (tmdb_person["birthday"].is_null() ? "NULL" : "'" + tmdb_person["birthday"].get<std::string>() + "'") + ", " +
+                                        (tmdb_person["deathday"].is_null() ? "NULL" : "'" + tmdb_person["deathday"].get<std::string>() + "'") + ", '" +
+                                        tmdb_person["known_for_department"].get<std::string>() + "', " +
+                                        std::to_string(tmdb_person["popularity"].get<double>()) + ", " +
+                                        profile_path + ", " +
+                                        imdb_id + ", " +
+                                        homepage + ", " +
+                                        "CURRENT_TIMESTAMP);";
+
+            db_execute(insert_query);
+        }
+
+        std::string job = !cast.contains("job") ? "NULL" : "'" + cast["job"].get<std::string>() + "'";
+        std::string insert_cast_query = "INSERT INTO tv_show_cast (tv_id, person_id, `character`, credit_id, `order`, department, job, last_update) VALUES (" +
+                                        std::to_string(id) + ", " +
+                                        std::to_string(cast["id"].get<int>()) + ", '" +
+                                        escape_string(cast["character"].get<std::string>()) + "', '" +
+                                        cast["credit_id"].get<std::string>() + "', " +
+                                        std::to_string(cast["order"].get<int>()) + ", '" +
+                                        cast["known_for_department"].get<std::string>() + "', " +
+                                        job + ", " +
+                                        "CURRENT_TIMESTAMP);";
+
+        db_execute(insert_cast_query);
+    }
+
+    result = db_select("SELECT * FROM tv_show_cast WHERE tv_id = " + std::to_string(id) + " ORDER BY `order` ASC;");
+
+    std::string json_str = result.dump();
+    mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+    mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+    mg_printf(conn, "Content-Type: application/json\r\n");
+    mg_printf(conn, "Content-Length: %zu\r\n", json_str.size());
+    mg_printf(conn, "\r\n");
+    mg_write(conn, json_str.c_str(), json_str.size());
+    return 200;
+}
+
+int get_person_details_handler(struct mg_connection* conn, void* data)
+{
+    const mg_request_info* req_info = mg_get_request_info(conn);
+
+    // Parse query string
+    std::string query_string = req_info->query_string ? req_info->query_string : "";
+    std::map<std::string, std::string> params = parse_query_string(query_string);
+
+    int id;
+    std::string language;
+
+    // Extract the id parameter
+    if(params.find("id") != params.end()){
+        id = std::stoi(params["id"]);
+    }else{
+        std::cerr << "[ERROR] Missing id parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    // Extract the language parameter
+    if(params.find("language") != params.end()){
+        language = params["language"];
+    }else{
+        std::cerr << "[ERROR] Missing language parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    json result = db_select("SELECT * FROM people WHERE person_id = " + std::to_string(id));
+    if(result.empty()){
+        json tmdb_result = get_person_details(id, language);
+        if(tmdb_result.empty()){
+            mg_printf(conn, "HTTP/1.1 404 Not Found\r\n");
+            mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+            mg_printf(conn, "\r\n");
+            return 404;
+        }
+
+        std::string homepage = tmdb_result["homepage"].is_null() ? "NULL" : "'" + tmdb_result["homepage"].get<std::string>() + "'";
+        std::string profile_path = tmdb_result["profile_path"].is_null() ? "NULL" : "'" + tmdb_result["profile_path"].get<std::string>() + "'";
+        std::string imdb_id = tmdb_result["imdb_id"].is_null() ? "NULL" : "'" + tmdb_result["imdb_id"].get<std::string>() + "'";
+        std::string insert_person_query = "INSERT INTO people (person_id, name, gender, biography, birthday, deathday, known_for_department, popularity, profile_path, imdb_id, homepage, last_update) VALUES (" +
+                                          std::to_string(tmdb_result["id"].get<int>()) + ", '" +
+                                          escape_string(tmdb_result["name"].get<std::string>()) + "', " +
+                                          std::to_string(tmdb_result["gender"].get<int>()) + ", '" +
+                                          escape_string(tmdb_result["biography"].get<std::string>()) + "', " +
+                                          (tmdb_result["birthday"].is_null() ? "NULL" : "'" + tmdb_result["birthday"].get<std::string>() + "'") + ", " +
+                                          (tmdb_result["deathday"].is_null() ? "NULL" : "'" + tmdb_result["deathday"].get<std::string>() + "'") + ", '" +
+                                          tmdb_result["known_for_department"].get<std::string>() + "', " +
+                                          std::to_string(tmdb_result["popularity"].get<double>()) + ", " +
+                                          profile_path + ", " +
+                                          imdb_id + ", " +
+                                          homepage + "', " +
+                                          "CURRENT_TIMESTAMP);";
+
+        db_execute(insert_person_query);
+        result = db_select("SELECT * FROM people WHERE person_id = " + std::to_string(id));
+    }
+
+    std::string json_str = result.dump();
+    mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+    mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+    mg_printf(conn, "Content-Type: application/json\r\n");
+    mg_printf(conn, "Content-Length: %zu\r\n", json_str.size());
+    mg_printf(conn, "\r\n");
+    mg_write(conn, json_str.c_str(), json_str.size());
+
+    return 200;
+}
+
+int set_movie_data_handler(struct mg_connection* conn, void* data)
+{
+    const mg_request_info* req_info = mg_get_request_info(conn);
+
+    // Parse query string
+    std::string query_string = req_info->query_string ? req_info->query_string : "";
+    std::map<std::string, std::string> params = parse_query_string(query_string);
+
+    int id;
+    std::string streaming_id;
+
+    // Extract the id parameter
+    if(params.find("id") != params.end()){
+        id = std::stoi(params["id"]);
+    }else{
+        std::cerr << "[ERROR] Missing id parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    // Extract the streaming_id parameter
+    if(params.find("streaming_id") != params.end()){
+        streaming_id = params["streaming_id"];
+    }else{
+        std::cerr << "[ERROR] Missing streaming_id parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    std::string update_query = "UPDATE movies SET streaming_id = '" + streaming_id + "' WHERE movie_id = " + std::to_string(id) + ";";
+    db_execute(update_query);
+
+    mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+    mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+    mg_printf(conn, "Content-Type: application/json\r\n");
+    mg_printf(conn, "\r\n");
+    return 200;
+}
+
+int set_tv_show_data_handler(struct mg_connection* conn, void* data)
+{
+    const mg_request_info* req_info = mg_get_request_info(conn);
+
+    if(strcmp("POST", req_info->request_method) == 0){
+        char post_data[10000];
+        int post_data_len = mg_read(conn, post_data, sizeof(post_data) - 1);
+        post_data[post_data_len] = '\0';
+
+        if(post_data_len > 0){
+            json request_json = json::parse(post_data);
+
+            int id;
+            std::string streaming_id;
+            json episodes;
+
+            if(request_json.contains("episodes")){
+                episodes = request_json["episodes"];
+            }else{
+                std::cerr << "[ERROR] Missing episodes parameter in request." << std::endl;
+                mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+                mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+                mg_printf(conn, "\r\n");
+                return 400;
+            }
+
+            for(const auto& episode : episodes){
+                if(episode.contains("id") && episode.contains("streaming_id")){
+                    id = episode["id"];
+                    streaming_id = episode["streaming_id"];
+
+                    std::string update_query = "UPDATE episodes SET streaming_id = '" + streaming_id + "' WHERE episode_id = " + std::to_string(id) + ";";
+                    db_execute(update_query);
+                }else{
+                    std::cerr << "[ERROR] Missing id or streaming_id parameter in request." << std::endl;
+                    mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+                    mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+                    mg_printf(conn, "\r\n");
+                    return 400;
+                }
+            }
+
+            mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+            mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+            mg_printf(conn, "Content-Type: application/json\r\n");
+            mg_printf(conn, "\r\n");
+            json response_json = {{"status", "success"}};
+            std::string response_str = response_json.dump();
+            mg_write(conn, response_str.c_str(), response_str.size());
+        }else{
+            std::cerr << "[ERROR] No data received in request." << std::endl;
+            mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+            mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+            mg_printf(conn, "\r\n");
+            return 400;
+        }
+    }else{
+        mg_printf(conn, "HTTP/1.1 405 Method Not Allowed\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "Allow: POST\r\n");
+        mg_printf(conn, "Content-Type: application/json\r\n");
+        mg_printf(conn, "\r\n");
+        return 405;
+    }
+    return 200;
+}
+
+
