@@ -1,45 +1,311 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Streaming Auth</title>
-  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .auth-step { transition: all 0.3s ease; }
+    .video-card:hover {
+      transform: scale(1.05);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .video-card button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.5rem; /* Adjust size of the dots */
+    line-height: 1;
+    padding: 0;
+  }
+
+  .video-card button:hover {
+    color: #ffffff; /* Change color on hover */
+  }
+
+  #open-modal-btn {
+    position: fixed; /* Assicura che il bottone rimanga fisso nella posizione */
+    bottom: 1rem; /* Distanza dal fondo */
+    right: 1rem; /* Distanza dal lato destro */
+    z-index: 10000; /* Assicura che il bottone sia sopra gli altri elementi */
+  }
+  </style>
 </head>
-<body>
-  <header id="header">
-    <h1>Welcome to Streaming</h1>
+<body class="bg-gray-900 text-white min-h-screen">
+  <button 
+    id="open-modal-btn" 
+    class="fixed bottom-4 right-4 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md shadow-lg transition"
+    onclick="openModal()"
+  >
+    Set Data
+  </button>
+
+  <!-- Modal -->
+  <div 
+  id="data-modal" 
+  class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+  >
+  <div 
+    id="modal-content" 
+    class="bg-gray-800 text-white p-6 rounded-lg shadow-lg w-full max-w-lg relative overflow-y-auto"
+    style="max-height: 90vh;"
+  >
+    <h2 class="text-xl font-bold mb-4">Set Data</h2>
+    <form id="data-form">
+      <!-- Mode Selection -->
+      <div class="mb-4">
+        <label for="data_mode" class="block text-sm font-medium mb-2">Select Mode</label>
+        <select 
+          id="data_mode" 
+          class="w-full px-4 py-2 bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+          onchange="toggleMode()"
+        >
+          <option value="movie">Movie</option>
+          <option value="tv_show">TV Show</option>
+        </select>
+      </div>
+
+      <!-- Movie Fields -->
+      <div id="movie-fields">
+        <!-- Chat ID -->
+        <div class="mb-4">
+          <label for="chat_id" class="block text-sm font-medium mb-2">Chat ID</label>
+          <input 
+            type="number" 
+            id="chat_id" 
+            class="w-full px-4 py-2 bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+            readonly
+          />
+        </div>
+
+        <!-- Movie Search -->
+        <div class="mb-4">
+          <label for="movie_search" class="block text-sm font-medium mb-2">Search Movie</label>
+          <input 
+            type="text" 
+            id="movie_search" 
+            class="w-full px-4 py-2 bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+            placeholder="Search for a movie"
+            oninput="searchMovie()"
+          />
+          <ul id="movie-results" class="bg-gray-700 rounded-md mt-2 max-h-40 overflow-y-auto hidden"></ul>
+        </div>
+
+        <!-- Selected Movie ID -->
+        <div class="mb-4">
+          <label for="movie_id" class="block text-sm font-medium mb-2">Movie ID</label>
+          <input 
+            type="number" 
+            id="movie_id" 
+            class="w-full px-4 py-2 bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+            placeholder="Selected Movie ID"
+            readonly
+          />
+        </div>
+
+        <!-- Video Selection -->
+        <div class="mb-4">
+          <label for="video_id" class="block text-sm font-medium mb-2">Select Video</label>
+          <select 
+            id="video_id" 
+            class="w-full px-4 py-2 bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+          >
+            <option value="">Select a video</option>
+            <!-- Options will be dynamically populated -->
+          </select>
+        </div>
+      </div>
+
+      <!-- TV Show Fields -->
+      <div id="tv-show-fields" class="hidden">
+        <!-- Chat ID -->
+        <div class="mb-4">
+          <label for="chat_id" class="block text-sm font-medium mb-2">Chat ID</label>
+          <input 
+            type="number" 
+            id="chat_id" 
+            class="w-full px-4 py-2 bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+            readonly
+          />
+        </div>
+
+        <!-- TV Show Search -->
+        <div class="mb-4">
+          <label for="tv_show_search" class="block text-sm font-medium mb-2">Search TV Show</label>
+          <input 
+            type="text" 
+            id="tv_show_search" 
+            class="w-full px-4 py-2 bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+            placeholder="Search for a TV show"
+            oninput="searchTvShow()"
+          />
+          <ul id="tv-show-results" class="bg-gray-700 rounded-md mt-2 max-h-40 overflow-y-auto hidden"></ul>
+        </div>
+
+        <!-- Selected TV Show ID -->
+        <div class="mb-4">
+          <label for="tv_show_id" class="block text-sm font-medium mb-2">Selected TV Show ID</label>
+          <input 
+            type="number" 
+            id="tv_show_id" 
+            class="w-full px-4 py-2 bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+            placeholder="Selected TV Show ID"
+            readonly
+          />
+        </div>
+
+        <!-- Season Selection -->
+        <div class="mb-4">
+          <label for="season_number" class="block text-sm font-medium mb-2">Season Number</label>
+          <input 
+            type="number" 
+            id="season_number" 
+            class="w-full px-4 py-2 bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+            placeholder="Enter season number"
+            oninput="fetchSeasonEpisodes()"
+          />
+        </div>
+
+        <!-- Episodes Table -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium mb-2">Episodes</label>
+          <table id="episodes-table" class="w-full text-left border-collapse">
+            <thead>
+              <tr>
+                <th class="border-b border-gray-600 py-2">Episode</th>
+                <th class="border-b border-gray-600 py-2">Episode ID</th>
+                <th class="border-b border-gray-600 py-2">Video ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Rows will be dynamically added here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Submit Button -->
+      <button 
+        type="button" 
+        onclick="submitData()" 
+        class="w-full bg-red-600 hover:bg-red-700 py-3 rounded-md font-medium transition"
+      >
+        Submit Data
+      </button>
+    </form>
+
+    <!-- Close Button -->
+    <button 
+      id="close-modal-btn" 
+      class="absolute top-2 right-2 text-gray-400 hover:text-white"
+    >
+      ✕
+    </button>
+  </div>
+  </div>
+
+  <!-- Header -->
+  <header class="bg-black py-4 px-6 flex justify-between items-center border-b border-gray-800">
+    <h1 class="text-2xl font-bold text-red-600">STREAMFLIX</h1>
+    <button id="logout-btn" class="hidden bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md transition">
+      Logout
+    </button>
   </header>
-  <div class="container" id="auth-container">
-    <div id="step-phone" class="auth-step" style="display: none;">
-      <input type="text" id="phone_number" placeholder="Phone Number" />
-      <button onclick="sendPhone()">Next</button>
+
+  <!-- Main Content -->
+  <div class="flex">
+    <!-- Chat Sidebar -->
+    <div id="chat-sidebar" class="hidden w-64 bg-gray-800 h-screen p-4 border-r border-gray-700 overflow-y-auto">
+      <h2 class="text-xl font-bold mb-4">Your Chats</h2>
+      <ul id="chat-list"></ul>
     </div>
 
-    <div id="step-code" class="auth-step" style="display:none;">
-      <input type="text" id="code" placeholder="Authentication Code" />
-      <button onclick="sendCode()">Next</button>
+    <!-- Auth Container -->
+    <div id="auth-container" class="max-w-md mx-auto mt-20 p-8 bg-gray-800 rounded-lg shadow-xl">
+      <!-- Step 1: Phone -->
+      <div id="step-phone" class="auth-step">
+        <h2 class="text-xl font-semibold mb-6 text-center">Enter Your Phone Number</h2>
+        <input 
+          type="text" 
+          id="phone_number" 
+          placeholder="+39 123 456 7890" 
+          class="w-full px-4 py-3 bg-gray-700 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-red-500"
+        />
+        <button 
+          onclick="sendPhone()"
+          class="w-full bg-red-600 hover:bg-red-700 py-3 rounded-md font-medium transition"
+        >
+          Continue
+        </button>
+      </div>
+
+      <!-- Step 2: Code -->
+      <div id="step-code" class="auth-step hidden">
+        <h2 class="text-xl font-semibold mb-6 text-center">Verification Code</h2>
+        <input 
+          type="text" 
+          id="code" 
+          placeholder="Enter 6-digit code" 
+          class="w-full px-4 py-3 bg-gray-700 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-red-500"
+        />
+        <button 
+          onclick="sendCode()"
+          class="w-full bg-red-600 hover:bg-red-700 py-3 rounded-md font-medium transition"
+        >
+          Verify
+        </button>
+      </div>
+
+      <!-- Step 3: Password -->
+      <div id="step-password" class="auth-step hidden">
+        <h2 class="text-xl font-semibold mb-6 text-center">Two-Factor Authentication</h2>
+        <input 
+          type="password" 
+          id="password" 
+          placeholder="Your 2FA password" 
+          class="w-full px-4 py-3 bg-gray-700 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-red-500"
+        />
+        <button 
+          onclick="sendPassword()"
+          class="w-full bg-red-600 hover:bg-red-700 py-3 rounded-md font-medium transition"
+        >
+          Complete Login
+        </button>
+      </div>
     </div>
 
-    <div id="step-password" class="auth-step" style="display:none;">
-      <input type="password" id="password" placeholder="2FA Password (if any)" />
-      <button onclick="sendPassword()">Finish</button>
+    <!-- Video UI (Hidden Initially) -->
+    <div id="video-ui" class="hidden flex-1 p-6">
+      <div class="flex justify-between items-center mb-6">
+        <button id="toggle-sidebar" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-md transition">
+          ☰ Toggle Chats
+        </button>
+        <h2 class="text-2xl font-bold">Your Videos</h2>
+        <div class="w-32"></div> <!-- Spacer for alignment -->
+      </div>
+      
+      <!-- Video Grid -->
+      <div id="video-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+        <!-- Dynamically populated by JS -->
+      </div>
     </div>
   </div>
 
-  <div class="container" id="video-ui" style="display: none;">
-    <h2>Available Videos</h2>
-    <ul id="video-list"></ul>
-    <div id="video-container"></div>
+  <!-- Video Player -->
+  <div id="video-container" class="hidden fixed inset-0 z-50 bg-black bg-opacity-90 flex items-center justify-center">
   </div>
 
   <script>
     const server = `http://${window.location.hostname}:10000`;
+    const DEFAULT_THUMBNAIL = "https://sm.ign.com/t/ign_it/screenshot/default/x_8v92.1280.jpg";
 
     console.log('Server:', server);
 
     let session_id = 0;
     let chats = [];
+    let videos_data = [];
+    let currentChatId = null;
 
     window.onload = function() {
       const cookie = document.cookie.split('; ').find(row => row.startsWith('session_id='));
@@ -50,8 +316,14 @@
       } else {
         sendApi();
       }
+
+      // Toggle sidebar
+      document.getElementById('toggle-sidebar').onclick = () => {
+        const sidebar = document.getElementById('chat-sidebar');
+        sidebar.classList.toggle('hidden');
+      };
     };
-  
+
     function sendApi() {
       fetch(`${server}/auth`, {
         method: 'POST',
@@ -68,11 +340,11 @@
         checkState();
       });
     }
-  
+
     function sendPhone() {
       const phone_number = document.getElementById('phone_number').value;
       console.log('Sending phone number:', phone_number);
-  
+
       fetch(`${server}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -80,11 +352,11 @@
       })
       .then(() => checkState());
     }
-  
+
     function sendCode() {
       const code = document.getElementById('code').value;
       console.log('Sending code:', code);
-  
+
       fetch(`${server}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -92,7 +364,7 @@
       })
       .then(() => checkState());
     }
-  
+
     function checkState() {
       console.log('Checking state...');
       fetch(`${server}/auth/get_state?session_id=${session_id}`)
@@ -114,13 +386,13 @@
               showStep('step-code');
               break;
             case 'authorizationStateReady':
-              document.getElementById('auth-container').style.display = 'none';
-              document.getElementById('video-ui').style.display = 'block';
-              getChats();
-
-              let logoutButton = document.createElement('button');
-              logoutButton.textContent = 'Logout';
-              logoutButton.onclick = () => {
+              document.getElementById('auth-container').classList.add('hidden');
+              document.getElementById('video-ui').classList.remove('hidden');
+              document.getElementById('chat-sidebar').classList.remove('hidden');
+              
+              const logoutBtn = document.getElementById('logout-btn');
+              logoutBtn.classList.remove('hidden');
+              logoutBtn.onclick = () => {
                 fetch(`${server}/logout?session_id=${session_id}`)
                   .then(() => {
                     session_id = 0;
@@ -128,7 +400,8 @@
                     window.location.reload();
                   });
               };
-              document.getElementById('header').appendChild(logoutButton);
+              
+              getChats();
               break;
             default:
               console.log('Unknown state:', state);
@@ -136,86 +409,530 @@
           }
         });
     }
-  
+
     function showStep(id) {
-      document.querySelectorAll('.auth-step').forEach(el => el.style.display = 'none');
-      document.getElementById(id).style.display = 'block';
+      document.querySelectorAll('.auth-step').forEach(el => el.classList.add('hidden'));
+      document.getElementById(id).classList.remove('hidden');
     }
-  
+
     function getFiles(chat_id) {
+      const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"; // TMDB base URL with size
+    
+      currentChatId = chat_id;
       fetch(`${server}/get_files?session_id=${session_id}&chat_id=${chat_id}`)
         .then(res => res.json())
         .then(data => {
-          const videoList = document.getElementById('video-list');
-          videoList.innerHTML = '';
-          const backButton = document.createElement('button');
-          backButton.textContent = 'Back';
-          backButton.onclick = () => getChats();
-          videoList.appendChild(backButton);
+          const videoGrid = document.getElementById('video-grid');
+          videoGrid.innerHTML = '';
 
-          console.log('Chat ID:', chat_id);
-          console.log(data);
+          videos_data = data;
+    
+          fetch(`${server}/get_videos_data`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id, videos: data })
+          })
+            .then(res => res.json())
+            .then(data => {
+              console.log('Videos data:', data);
+    
+              // Handle Movies
+              data.movies.forEach(movieData => {
+                const card = document.createElement('div');
+                card.className = 'video-card bg-gray-800 rounded-lg overflow-hidden cursor-pointer transition hover:scale-105 relative';
+    
+                card.innerHTML = `
+                  <div class="relative pb-[150%] bg-gray-700">
+                    <img 
+                      src="${TMDB_IMAGE_BASE_URL}${movieData.poster_path}" 
+                      alt="${movieData.title}" 
+                      class="absolute h-full w-full object-cover"
+                    >
+                  </div>
+                  <div class="p-3 flex flex-wrap justify-between items-start gap-2">
+                    <div class="min-w-0 flex-1">
+                      <h3 class="font-medium truncate">${movieData.title}</h3>
+                      <p class="text-sm text-gray-400 truncate">${movieData.overview}</p>
+                    </div>
+                  </div>
+                `;
 
-          data.forEach(file => {
-            const li = document.createElement('li');
-            li.textContent = file['file_name'] + ' ' + file["remote_id"];
-            li.onclick = () => playVideo(file);
-            videoList.appendChild(li);
-          });
+                card.onclick = () => playVideo(movieData.telegram_video_id, movieData.mime_type);
+    
+                videoGrid.appendChild(card);
+              });
+    
+              // Handle TV Shows
+              if('tv_shows' in data) {
+                data.tv_shows.forEach(tvShow => {
+                  const card = document.createElement('div');
+                  card.className = 'video-card bg-gray-800 rounded-lg overflow-hidden cursor-pointer transition hover:scale-105 relative';
+                  card.onclick = () => showSeasons(tvShow); // Attach onclick to show seasons
+      
+                  card.innerHTML = `
+                    <div class="relative pb-[150%] bg-gray-700">
+                      <img 
+                        src="${TMDB_IMAGE_BASE_URL}${tvShow.poster_path}" 
+                        alt="${tvShow.name}" 
+                        class="absolute h-full w-full object-cover"
+                      >
+                    </div>
+                    <div class="p-3 flex flex-wrap justify-between items-start gap-2">
+                      <div class="min-w-0 flex-1">
+                        <h3 class="font-medium truncate">${tvShow.name}</h3>
+                        <p class="text-sm text-gray-400 truncate">${tvShow.overview}</p>
+                      </div>
+                    </div>
+                  `;
+      
+                  videoGrid.appendChild(card);
+                });
+              }
+    
+              // Handle No Data
+              data.no_data.forEach(file => {
+                const card = document.createElement('div');
+                card.className = 'video-card bg-gray-800 rounded-lg overflow-hidden cursor-pointer transition hover:scale-105 relative';
+    
+                card.innerHTML = `
+                  <div class="relative pb-[150%] bg-gray-700">
+                    <img 
+                      src="${DEFAULT_THUMBNAIL}" 
+                      alt="${file.file_name}" 
+                      class="absolute h-full w-full object-cover"
+                    >
+                  </div>
+                  <div class="p-3 flex flex-wrap justify-between items-start gap-2">
+                    <div class="min-w-0 flex-1">
+                      <h3 class="font-medium truncate">${file.file_name}</h3>
+                      <p class="text-sm text-gray-400 truncate">${file.remote_id}</p>
+                    </div>
+                  </div>
+                `;
+    
+                videoGrid.appendChild(card);
+              });
+            });
         });
+    }
+
+    let navigationStack = []; // Stack to track navigation levels
+
+    function showSeasons(tvShow) {
+      const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500";
+      const videoGrid = document.getElementById('video-grid');
+      navigationStack.push(() => getFiles(currentChatId)); // Push the current view to the stack
+      videoGrid.innerHTML = ''; // Clear the grid to show seasons
+
+      // Add a "Back" button
+      const backButton = document.createElement('button');
+      backButton.className = 'bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-md mb-4';
+      backButton.textContent = '← Back to TV Shows';
+      backButton.onclick = () => {
+        const previousView = navigationStack.pop(); // Pop the previous view from the stack
+        if (previousView) previousView();
+      };
+      videoGrid.appendChild(backButton);
+
+      // Display seasons
+      tvShow.seasons.forEach(season => {
+        const card = document.createElement('div');
+        card.className = 'video-card bg-gray-800 rounded-lg overflow-hidden cursor-pointer transition hover:scale-105 relative';
+
+        card.innerHTML = `
+          <div class="relative pb-[150%] bg-gray-700"> <!-- Default Aspect Ratio -->
+            <img 
+              src="${TMDB_IMAGE_BASE_URL}${season.poster_path}" 
+              alt="${season.name}" 
+              class="absolute h-full w-full object-cover"
+            >
+          </div>
+          <div class="p-3 flex flex-wrap justify-between items-start gap-2">
+            <div class="min-w-0 flex-1">
+              <h3 class="font-medium truncate">${season.name}</h3>
+              <p class="text-sm text-gray-400 truncate">${season.overview}</p>
+            </div>
+          </div>
+        `;
+
+        card.onclick = () => showEpisodes(season, tvShow); // Pass tvShow to maintain context
+        videoGrid.appendChild(card);
+      });
+    }
+
+    function showEpisodes(season, tvShow) {
+      const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"; // Higher resolution for episodes
+      const videoGrid = document.getElementById('video-grid');
+      navigationStack.push(() => showSeasons(tvShow)); // Push the current view to the stack
+      videoGrid.innerHTML = ''; // Clear the grid to show episodes
+
+      // Add a "Back" button
+      const backButton = document.createElement('button');
+      backButton.className = 'bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-md mb-4';
+      backButton.textContent = '← Back to Seasons';
+      backButton.onclick = () => {
+        const previousView = navigationStack.pop(); // Pop the previous view from the stack
+        if (previousView) previousView();
+      };
+      videoGrid.appendChild(backButton);
+
+      // Display episodes
+      season.episodes.forEach(episode => {
+        const card = document.createElement('div');
+        card.className = 'video-card bg-gray-800 rounded-lg overflow-hidden cursor-pointer transition hover:scale-105 relative';
+
+        card.innerHTML = `
+          <div class="relative pb-[56.25%] bg-gray-700"> <!-- 16:9 Aspect Ratio -->
+            <img 
+              src="${TMDB_IMAGE_BASE_URL}${episode.still_path}" 
+              alt="${episode.name}" 
+              class="absolute h-full w-full object-cover"
+            >
+          </div>
+          <div class="p-3 flex flex-wrap justify-between items-start gap-2">
+            <div class="min-w-0 flex-1" onclick="playVideo
+              <h3 class="font-medium truncate">${episode.name}</h3>
+              <p class="text-sm text-gray-400 truncate">${episode.overview}</p>
+            </div>
+          </div>
+        `;
+
+        card.onclick = () => playVideo(episode.telegram_video_id, episode.mime_type);
+        videoGrid.appendChild(card);
+      });
     }
 
     function getChats() {
       if(chats.length > 0) {
-        const videoList = document.getElementById('video-list');
-        videoList.innerHTML = '';
-        const backButton = document.createElement('button');
-        backButton.textContent = 'Back';
-        backButton.onclick = () => getChats();
-        videoList.appendChild(backButton);
-        console.log('Using cached chats:', chats);
-        chats.forEach(chat => {
-          const li = document.createElement('li');
-          li.textContent = chat['title'];
-          li.onclick = () => getFiles(chat['id']);
-          videoList.appendChild(li);
-        });
-      }else{
+        updateChatList();
+      } else {
         fetch(`${server}/get_chats?session_id=${session_id}`)
+          .then(res => res.json())
+          .then(data => {
+            chats = data;
+            updateChatList();
+          }); 
+      }
+    }
+
+    function updateChatList() {
+      const chatList = document.getElementById('chat-list');
+      chatList.innerHTML = '';
+      
+      chats.forEach(chat => {
+        const li = document.createElement('li');
+        li.className = 'mb-2 p-2 hover:bg-gray-700 rounded cursor-pointer';
+        li.textContent = chat['title'];
+        li.onclick = () => getFiles(chat['id']);
+        chatList.appendChild(li);
+      });
+
+      // If we have a current chat selected, highlight it
+      if (currentChatId) {
+        const currentChat = document.querySelector(`[data-chat-id="${currentChatId}"]`);
+        if (currentChat) {
+          currentChat.classList.add('bg-gray-700');
+        }
+      }
+    }
+
+    function playVideo(...args) {
+      if(args.length === 0) return;
+      if(args.length === 2){
+        const id = args[0];
+        const mime_type = args[1];
+        const container = document.getElementById('video-container');
+        const closeBtn = document.createElement('button');
+
+        closeBtn.className = 'absolute top-4 right-4 text-gray-400 hover:text-white';
+        closeBtn.innerHTML = '✕';
+        closeBtn.onclick = () => {
+          container.innerHTML = '';
+          container.classList.add('hidden');
+        };
+
+        const player = document.createElement('video');
+        player.id = 'video-player';
+        player.className = 'w-3/4 h-auto max-w-4xl mx-auto';
+        player.controls = true;
+        player.setAttribute('playsinline', true);
+        
+        player.innerHTML = `
+          <source 
+            src="${server}/video?file_id=${id}&session_id=${session_id}" 
+            type="${mime_type}"
+          >
+        `;
+        
+        container.innerHTML = '';
+        container.classList.remove('hidden');
+        container.appendChild(closeBtn);
+        container.appendChild(player);
+
+        player.load();
+        player.play();
+      }else if(args.length === 1){
+        playVideo(args[0]['id'], args[0]['mime_type']); 
+      }
+    }
+
+    function openModal() {
+      // Set the initial mode
+      toggleMode();
+
+      // Automatically set the chat ID for both Movie and TV Show fields
+      const chatId = currentChatId;
+      document.querySelectorAll('#chat_id').forEach(chatIdField => {
+        chatIdField.value = chatId;
+      });
+
+      // Populate the video dropdown
+      const videoSelect = document.getElementById('video_id');
+      videoSelect.innerHTML = '<option value="">Select a video</option>';
+      videos_data.forEach(video => {
+        const option = document.createElement('option');
+        option.value = video.message_id;
+        option.textContent = video.file_name;
+        videoSelect.appendChild(option);
+      });
+
+      // Show the modal
+      document.getElementById('data-modal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('data-modal').classList.add('hidden');
+    }
+
+    function searchMovie() {
+      const query = document.getElementById('movie_search').value;
+      const resultsContainer = document.getElementById('movie-results');
+
+      if (query.length < 3) {
+        resultsContainer.classList.add('hidden');
+        return;
+      }
+
+      fetch(`${server}/search_movie?title=${query}&language=it`)
         .then(res => res.json())
         .then(data => {
-          const videoList = document.getElementById('video-list');
-          videoList.innerHTML = '';
-          chats = data;
-          data.forEach(chat => {
+          resultsContainer.innerHTML = '';
+          data.results.forEach(movie => {
             const li = document.createElement('li');
-            li.textContent = chat['title'];
-            li.onclick = () => getFiles(chat['id']);
-            videoList.appendChild(li);
+            li.className = 'p-2 hover:bg-gray-600 cursor-pointer';
+            li.textContent = `${movie.title} (${movie.release_date})`;
+            li.onclick = () => {
+              document.getElementById('movie_id').value = movie.id;
+              resultsContainer.classList.add('hidden');
+            };
+            resultsContainer.appendChild(li);
           });
-        }); 
-      } 
+          resultsContainer.classList.remove('hidden');
+        });
     }
-  
-    function playVideo(file) {
-      const videoContainer = document.getElementById('video-container');
-      videoContainer.innerHTML = '';
 
-      const video = document.createElement('video');
-      video.controls = true;
-      video.style.width = '100%';
-      video.style.height = 'auto';
+    function submitMovieData() {
+      const movie_id = parseInt(document.getElementById('movie_id').value);
+      const video_id = document.getElementById('video_id').value;
+      const chat_id = document.getElementById('chat_id').value;
 
-      const source = document.createElement('source');
-      source.src = `${server}/video?file_id=${file['id']}&session_id=${session_id}`;
-      source.type = file['mime_type'];
+      if (!movie_id || !video_id || !chat_id) {
+        alert('Please fill in all fields.');
+        return;
+      }
 
-      video.appendChild(source);
-      videoContainer.appendChild(video);
+      const payload = { movie_id, video_id, chat_id, language: 'it' };
 
-      videoContainer.appendChild(video);
+      fetch(`${server}/set_movie_data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      .then(res => {
+        if (res.ok) {
+          // HTTP status code is 200-299
+          alert('Movie data submitted successfully!');
+          document.getElementById('data-modal').classList.add('hidden');
+          window.location.reload(); // Reload the page to reflect changes
+        } else {
+          // Handle non-2xx status codes
+          console.error(`Error: HTTP ${res.status}`);
+          alert(`Failed to submit movie data. Server returned status: ${res.status}`);
+        }
+      })
+      .catch(err => {
+        // Handle network or other errors
+        console.error('Error:', err);
+        alert('Failed to submit movie data. Please check your connection.');
+      });
     }
+
+    function searchTvShow() {
+      const query = document.getElementById('tv_show_search').value;
+      const resultsContainer = document.getElementById('tv-show-results');
+
+      if (query.length < 3) {
+        resultsContainer.classList.add('hidden');
+        return;
+      }
+
+      fetch(`${server}/search_tv_show?title=${query}&language=it`)
+        .then(res => res.json())
+        .then(data => {
+          resultsContainer.innerHTML = '';
+          data.results.forEach(tvShow => {
+            const li = document.createElement('li');
+            li.className = 'p-2 hover:bg-gray-600 cursor-pointer';
+            li.textContent = `${tvShow.name} (${tvShow.first_air_date})`;
+            li.onclick = () => {
+              document.getElementById('tv_show_search').value = tvShow.name;
+              document.getElementById('tv_show_id').value = tvShow.id;
+              resultsContainer.classList.add('hidden');
+            };
+            resultsContainer.appendChild(li);
+          });
+          resultsContainer.classList.remove('hidden');
+        });
+    }
+
+    function fetchSeasonEpisodes() {
+      const tv_show_id = document.getElementById('tv_show_id').value;
+      const season_number = parseInt(document.getElementById('season_number').value);
+
+      if (!tv_show_id || !season_number) return;
+
+      fetch(`${server}/get_tv_show_season?id=${tv_show_id}&season_number=${season_number}&language=it`)
+        .then(res => res.json())
+        .then(data => {
+          const episodesTable = document.querySelector('#episodes-table tbody');
+          episodesTable.innerHTML = ''; // Clear existing rows
+
+          let episodeCount = 1;
+          data.episodes.forEach(episode => {
+            const row = document.createElement('tr');
+            
+            row.innerHTML = `
+              <td class="border-b border-gray-600 py-2">${episodeCount++}</td>
+              <td class="border-b border-gray-600 py-2">${episode.episode_id}</td>
+              <td class="border-b border-gray-600 py-2">
+                <select class="w-full px-4 py-2 bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500">
+                  <option value="">Select a video</option>
+                  ${videos_data.map(video => `<option value="${video.message_id}">${video.file_name}</option>`).join('')}
+                </select>
+              </td>
+            `;
+            episodesTable.appendChild(row);
+          });
+        });
+    }
+    
+    function removeEpisodeRow(button) {
+      const row = button.closest('tr');
+      row.remove();
+    }
+
+    function submitTvShowData() {
+      const chat_id = document.getElementById('chat_id').value;
+      const episodesTable = document.querySelectorAll('#episodes-table tbody tr');
+
+      if (!chat_id || episodesTable.length === 0) {
+        alert('Please fill in all fields.');
+        return;
+      }
+
+      const episodes = Array.from(episodesTable).map(row => {
+        const episode_id = row.cells[1].textContent.trim();
+        const video_id = row.cells[2].querySelector('select').value.trim();
+
+        if (!video_id || !episode_id) {
+          return null;
+        }
+
+        if(video_id.length == 0 || episode_id.length == 0) {
+          return null;
+        }
+
+        if(!parseInt(episode_id)) {
+          return null;
+        }
+
+        return { episode_id: parseInt(episode_id), video_id };
+      }).filter(Boolean); // Remove null entries
+
+      const payload = { chat_id, episodes };
+
+      fetch(`${server}/set_tv_show_data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+        .then(res => {
+          if (res.ok) {
+            alert('TV show data submitted successfully!');
+            document.getElementById('data-modal').classList.add('hidden');
+            window.location.reload(); // Reload the page to reflect changes
+          } else {
+            console.error(`Error: HTTP ${res.status}`);
+            alert(`Failed to submit TV show data. Server returned status: ${res.status}`);
+          }
+        })
+        .catch(err => {
+          console.error('Error:', err);
+          alert('Failed to submit TV show data. Please check your connection.');
+        });
+    }
+
+    function toggleMode() {
+      const mode = document.getElementById('data_mode').value;
+      const movieFields = document.getElementById('movie-fields');
+      const tvShowFields = document.getElementById('tv-show-fields');
+
+      if (mode === 'movie') {
+        movieFields.classList.remove('hidden');
+        tvShowFields.classList.add('hidden');
+      } else if (mode === 'tv_show') {
+        movieFields.classList.add('hidden');
+        tvShowFields.classList.remove('hidden');
+      }
+
+      // Clear all input fields when toggling modes
+      document.querySelectorAll('#data-form input').forEach(input => {
+        input.value = '';
+      });
+
+      // Clear dropdowns
+      document.querySelectorAll('#data-form select').forEach(select => {
+        select.selectedIndex = 0;
+      });
+
+      // Clear search results
+      document.getElementById('movie-results').classList.add('hidden');
+      document.getElementById('movie-results').innerHTML = '';
+      document.getElementById('tv-show-results').classList.add('hidden');
+      document.getElementById('tv-show-results').innerHTML = '';
+
+      // Clear episodes table
+      document.querySelector('#episodes-table tbody').innerHTML = '';
+    }
+
+    function submitData() {
+      const mode = document.getElementById('data_mode').value;
+
+      if (mode === 'movie') {
+        submitMovieData();
+      } else if (mode === 'tv_show') {
+        submitTvShowData();
+      }
+    }
+
+    document.getElementById('close-modal-btn').onclick = closeModal;
+    // Close modal when clicking outside of it
+    document.getElementById('data-modal').addEventListener('click', (event) => {
+      const modalContent = document.getElementById('modal-content');
+      if(!modalContent.contains(event.target)){
+        closeModal();
+      }
+    });
   </script>
-  
 </body>
 </html>

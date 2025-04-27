@@ -23,3 +23,5 @@ extern int set_movie_data_handler(struct mg_connection* conn, void* data);
 extern int set_tv_show_data_handler(struct mg_connection* conn, void* data);
 
 extern void add_genres(const std::string& language);
+
+extern int get_videos_data_handler(struct mg_connection* conn, void* data); 

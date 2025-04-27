@@ -44,6 +44,8 @@ void setup_endpoints()
     mg_set_request_handler(ctx, "/set_movie_data", set_movie_data_handler, nullptr);
     mg_set_request_handler(ctx, "/set_tv_show_data", set_tv_show_data_handler, nullptr);
 
+    mg_set_request_handler(ctx, "/get_videos_data", get_videos_data_handler, nullptr);
+
     add_genres("it");
 }
 
@@ -228,7 +230,6 @@ int handle_video(struct mg_connection* conn, void *)
     return 200;
 }
 
-//TODO: ADD CHAT ID PARAMETER
 int get_files(struct mg_connection* conn, void* data)
 {
     const mg_request_info *req_info = mg_get_request_info(conn);
@@ -598,6 +599,46 @@ int search_tv_show_handler(struct mg_connection* conn, void* data)
     return 200;
 }
 
+int get_movie_details_(int id, const std::string& language, json& result)
+{
+    result = db_select("SELECT * FROM movies WHERE movie_id = " + std::to_string(id));
+    if(result.empty()){
+        json tmdb_result = get_movie_details(id, language);
+        if(tmdb_result.empty()){
+            return 404;
+        }
+
+        std::string insert_query = "INSERT INTO movies (movie_id, title, overview, release_date, runtime, status, popularity, vote_average, vote_count, poster_path, backdrop_path, adult, imdb_id, homepage, video, last_update) VALUES (" +
+                       std::to_string(tmdb_result["id"].get<int>()) + ", '" +
+                       escape_string(tmdb_result["title"].get<std::string>()) + "', '" +
+                       escape_string(tmdb_result["overview"].get<std::string>()) + "', '" +
+                       tmdb_result["release_date"].get<std::string>() + "', " +
+                       std::to_string(tmdb_result["runtime"].get<int>()) + ", '" +
+                       tmdb_result["status"].get<std::string>() + "', " +
+                       std::to_string(tmdb_result["popularity"].get<double>()) + ", " +
+                       std::to_string(tmdb_result["vote_average"].get<double>()) + ", " +
+                       std::to_string(tmdb_result["vote_count"].get<int>()) + ", '" +
+                       tmdb_result["poster_path"].get<std::string>() + "', '" +
+                       tmdb_result["backdrop_path"].get<std::string>() + "', " +
+                       (tmdb_result["adult"].get<bool>() ? "1" : "0") + ", '" +
+                       tmdb_result["imdb_id"].get<std::string>() + "', '" +
+                       tmdb_result["homepage"].get<std::string>() + "', " +
+                       (tmdb_result["video"].get<bool>() ? "1" : "0") + ", " +
+                       "CURRENT_TIMESTAMP);";
+
+        db_execute(insert_query);
+
+        for(const auto& genre : tmdb_result["genres"]){
+            db_execute("INSERT INTO movie_genres (movie_id, genre_id) VALUES (" + std::to_string(tmdb_result["id"].get<int>()) + ", " + std::to_string(genre["id"].get<int>()) + ")");
+        }
+
+        result = db_select("SELECT * FROM movies WHERE movie_id = " + std::to_string(id)).front();
+        result["genres"] = db_select("SELECT genre_id FROM movie_genres WHERE movie_id = " + std::to_string(id));
+    }
+
+    return 200;
+}
+
 int get_movie_details_handler(struct mg_connection* conn, void* data)
 {
     const mg_request_info* req_info = mg_get_request_info(conn);
@@ -631,54 +672,75 @@ int get_movie_details_handler(struct mg_connection* conn, void* data)
         return 400;
     }
 
-    json result = db_select("SELECT * FROM movies WHERE movie_id = " + std::to_string(id));
+    int status_code = 0;
+    json result;
+
+    status_code = get_movie_details_(id, language, result);
+
+    if(status_code == 404){
+        mg_printf(conn, "HTTP/1.1 404 Not Found\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 404;
+    }
+
+    if(status_code == 200){
+        std::string json_str = result.dump();
+
+        mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "Content-Type: application/json\r\n");
+        mg_printf(conn, "Content-Length: %zu\r\n", json_str.size());
+        mg_printf(conn, "\r\n");
+
+        mg_write(conn, json_str.c_str(), json_str.size());
+
+        return 200;
+    }
+
+    mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\n");
+    mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+    mg_printf(conn, "\r\n");
+    return 500;
+}
+
+int get_tv_show_details_(int id, const std::string& language, json& result)
+{
+    result = db_select("SELECT * FROM tv_shows WHERE tv_id = " + std::to_string(id));
     if(result.empty()){
-        json tmdb_result = get_movie_details(id, language);
+        json tmdb_result = get_tv_show_details(id, language);
         if(tmdb_result.empty()){
-            mg_printf(conn, "HTTP/1.1 404 Not Found\r\n");
-            mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
-            mg_printf(conn, "\r\n");
             return 404;
         }
 
-        std::string insert_query = "INSERT INTO movies (movie_id, streaming_id, title, overview, release_date, runtime, status, popularity, vote_average, vote_count, poster_path, backdrop_path, adult, imdb_id, homepage, video, last_update) VALUES (" +
-                       std::to_string(tmdb_result["id"].get<int>()) + ", " +
-                       "NULL, '" +
-                       escape_string(tmdb_result["title"].get<std::string>()) + "', '" +
+        std::string insert_query = "INSERT INTO tv_shows (tv_id, name, overview, first_air_date, last_air_date, number_of_seasons, number_of_episodes, status, popularity, vote_average, vote_count, poster_path, backdrop_path, homepage, in_production, type, last_update) VALUES (" +
+                       std::to_string(tmdb_result["id"].get<int>()) + ", '" +
+                       escape_string(tmdb_result["name"].get<std::string>()) + "', '" +
                        escape_string(tmdb_result["overview"].get<std::string>()) + "', '" +
-                       tmdb_result["release_date"].get<std::string>() + "', " +
-                       std::to_string(tmdb_result["runtime"].get<int>()) + ", '" +
+                       tmdb_result["first_air_date"].get<std::string>() + "', '" +
+                       tmdb_result["last_air_date"].get<std::string>() + "', " +
+                       std::to_string(tmdb_result["number_of_seasons"].get<int>()) + ", " +
+                       std::to_string(tmdb_result["number_of_episodes"].get<int>()) + ", '" +
                        tmdb_result["status"].get<std::string>() + "', " +
                        std::to_string(tmdb_result["popularity"].get<double>()) + ", " +
                        std::to_string(tmdb_result["vote_average"].get<double>()) + ", " +
                        std::to_string(tmdb_result["vote_count"].get<int>()) + ", '" +
                        tmdb_result["poster_path"].get<std::string>() + "', '" +
-                       tmdb_result["backdrop_path"].get<std::string>() + "', " +
-                       (tmdb_result["adult"].get<bool>() ? "1" : "0") + ", '" +
-                       tmdb_result["imdb_id"].get<std::string>() + "', '" +
+                       tmdb_result["backdrop_path"].get<std::string>() + "', '" +
                        tmdb_result["homepage"].get<std::string>() + "', " +
-                       (tmdb_result["video"].get<bool>() ? "1" : "0") + ", " +
+                       (tmdb_result["in_production"].get<bool>() ? "1" : "0") + ", '" +
+                       tmdb_result["type"].get<std::string>() + "', " +
                        "CURRENT_TIMESTAMP);";
 
         db_execute(insert_query);
 
         for(const auto& genre : tmdb_result["genres"]){
-            db_execute("INSERT INTO movie_genres (movie_id, genre_id) VALUES (" + std::to_string(tmdb_result["id"].get<int>()) + ", " + std::to_string(genre["id"].get<int>()) + ")");
+            db_execute("INSERT INTO tv_show_genres (tv_id, genre_id) VALUES (" + std::to_string(tmdb_result["id"].get<int>()) + ", " + std::to_string(genre["id"].get<int>()) + ")");
         }
 
-        result = db_select("SELECT * FROM movies WHERE movie_id = " + std::to_string(id)).front();
-        result["genres"] = db_select("SELECT genre_id FROM movie_genres WHERE movie_id = " + std::to_string(id));
+        result = db_select("SELECT * FROM tv_shows WHERE tv_id = " + std::to_string(id)).front();
+        result["genres"] = db_select("SELECT genre_id FROM tv_show_genres WHERE tv_id = " + std::to_string(id));
     }
-
-    std::string json_str = result.dump();
-
-    mg_printf(conn, "HTTP/1.1 200 OK\r\n");
-    mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
-    mg_printf(conn, "Content-Type: application/json\r\n");
-    mg_printf(conn, "Content-Length: %zu\r\n", json_str.size());
-    mg_printf(conn, "\r\n");
-
-    mg_write(conn, json_str.c_str(), json_str.size());
 
     return 200;
 }
@@ -716,56 +778,35 @@ int get_tv_show_details_handler(struct mg_connection* conn, void* data)
         return 400;
     }
 
-    json result = db_select("SELECT * FROM tv_shows WHERE tv_id = " + std::to_string(id));
-    if(result.empty()){
-        json tmdb_result = get_tv_show_details(id, language);
-        if(tmdb_result.empty()){
-            mg_printf(conn, "HTTP/1.1 404 Not Found\r\n");
-            mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
-            mg_printf(conn, "\r\n");
-            return 404;
-        }
+    int status_code = 0;
+    json result;
+    status_code = get_tv_show_details_(id, language, result);
 
-        std::string insert_query = "INSERT INTO tv_shows (tv_id, name, overview, first_air_date, last_air_date, number_of_seasons, number_of_episodes, status, popularity, vote_average, vote_count, poster_path, backdrop_path, homepage, in_production, type, last_update) VALUES (" +
-                       std::to_string(tmdb_result["id"].get<int>()) + ", '" +
-                       escape_string(tmdb_result["name"].get<std::string>()) + "', '" +
-                       escape_string(tmdb_result["overview"].get<std::string>()) + "', '" +
-                       tmdb_result["first_air_date"].get<std::string>() + "', '" +
-                       tmdb_result["last_air_date"].get<std::string>() + "', " +
-                       std::to_string(tmdb_result["number_of_seasons"].get<int>()) + ", " +
-                       std::to_string(tmdb_result["number_of_episodes"].get<int>()) + ", '" +
-                       tmdb_result["status"].get<std::string>() + "', " +
-                       std::to_string(tmdb_result["popularity"].get<double>()) + ", " +
-                       std::to_string(tmdb_result["vote_average"].get<double>()) + ", " +
-                       std::to_string(tmdb_result["vote_count"].get<int>()) + ", '" +
-                       tmdb_result["poster_path"].get<std::string>() + "', '" +
-                       tmdb_result["backdrop_path"].get<std::string>() + "', '" +
-                       tmdb_result["homepage"].get<std::string>() + "', " +
-                       (tmdb_result["in_production"].get<bool>() ? "1" : "0") + ", '" +
-                       tmdb_result["type"].get<std::string>() + "', " +
-                       "CURRENT_TIMESTAMP);";
-
-        db_execute(insert_query);
-
-        for(const auto& genre : tmdb_result["genres"]){
-            db_execute("INSERT INTO tv_show_genres (tv_id, genre_id) VALUES (" + std::to_string(tmdb_result["id"].get<int>()) + ", " + std::to_string(genre["id"].get<int>()) + ")");
-        }
-
-        result = db_select("SELECT * FROM tv_shows WHERE tv_id = " + std::to_string(id)).front();
-        result["genres"] = db_select("SELECT genre_id FROM tv_show_genres WHERE tv_id = " + std::to_string(id));
+    if(status_code == 404){
+        mg_printf(conn, "HTTP/1.1 404 Not Found\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 404;
     }
 
-    std::string json_str = result.dump();
+    if(status_code == 200){
+        std::string json_str = result.dump();
 
-    mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+        mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "Content-Type: application/json\r\n");
+        mg_printf(conn, "Content-Length: %zu\r\n", json_str.size());
+        mg_printf(conn, "\r\n");
+
+        mg_write(conn, json_str.c_str(), json_str.size());
+
+        return 200;
+    }
+
+    mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\n");
     mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
-    mg_printf(conn, "Content-Type: application/json\r\n");
-    mg_printf(conn, "Content-Length: %zu\r\n", json_str.size());
     mg_printf(conn, "\r\n");
-
-    mg_write(conn, json_str.c_str(), json_str.size());
-
-    return 200;
+    return 500;
 }
 
 int get_tv_show_season_handler(struct mg_connection* conn, void* data)
@@ -778,13 +819,13 @@ int get_tv_show_season_handler(struct mg_connection* conn, void* data)
     std::string query_string = req_info->query_string ? req_info->query_string : "";
     std::map<std::string, std::string> params = parse_query_string(query_string);
 
-    int id;
+    int tv_id;
     int season_number;
     std::string language;
 
-    // Extract the id parameter
+    // Extract the tv_id parameter
     if(params.find("id") != params.end()){
-        id = std::stoi(params["id"]);
+        tv_id = std::stoi(params["id"]);
     }else{
         std::cerr << "[ERROR] Missing id parameter in request." << std::endl;
         mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
@@ -816,11 +857,13 @@ int get_tv_show_season_handler(struct mg_connection* conn, void* data)
     }
 
     json result;
-    result["episodes"] = db_select("SELECT * FROM episodes, seasons WHERE episodes.season_id = seasons.season_id AND episodes.tv_id = " + std::to_string(id) + " AND seasons.season_number = " + std::to_string(season_number) + ";");
-    result["season"] = db_select("SELECT * FROM seasons WHERE tv_id = " + std::to_string(id) + " AND season_number = " + std::to_string(season_number)).front();
-    
+    result["episodes"] = db_select("SELECT * FROM episodes, seasons WHERE episodes.season_id = seasons.season_id AND episodes.tv_id = " + std::to_string(tv_id) + " AND seasons.season_number = " + std::to_string(season_number) + ";");
+
     if(result["episodes"].empty()){
-        json tmdb_result = get_tv_show_season(id, season_number, language);
+        json tmp;
+        get_tv_show_details_(tv_id, language, tmp);
+
+        json tmdb_result = get_tv_show_season(tv_id, season_number, language);
 
         if(tmdb_result.empty()){
             mg_printf(conn, "HTTP/1.1 404 Not Found\r\n");
@@ -829,13 +872,13 @@ int get_tv_show_season_handler(struct mg_connection* conn, void* data)
             return 404;
         }
 
-        json season_result = db_select("SELECT * FROM seasons WHERE tv_id = " + std::to_string(id) + " AND season_id = " + std::to_string(tmdb_result["id"].get<int>()));
+        json season_result = db_select("SELECT * FROM seasons WHERE tv_id = " + std::to_string(tv_id) + " AND season_id = " + std::to_string(tmdb_result["id"].get<int>()));
         if(season_result.empty()){
             int episodes_count = tmdb_result["episodes"].size();
 
             std::string insert_season_query = "INSERT INTO seasons (season_id, tv_id, season_number, name, overview, air_date, episode_count, poster_path, last_update) VALUES (" +
                                               std::to_string(tmdb_result["id"].get<int>()) + ", " +
-                                              std::to_string(id) + ", " +
+                                              std::to_string(tv_id) + ", " +
                                               std::to_string(tmdb_result["season_number"].get<int>()) + ", '" +
                                               escape_string(tmdb_result["name"].get<std::string>()) + "', '" +
                                               escape_string(tmdb_result["overview"].get<std::string>()) + "', '" +
@@ -850,9 +893,8 @@ int get_tv_show_season_handler(struct mg_connection* conn, void* data)
         for(const auto& episode : tmdb_result["episodes"]){
             json episode_result = db_select("SELECT * FROM episodes WHERE episode_id = " + std::to_string(episode["id"].get<int>()));
             if(episode_result.empty()){
-                std::string insert_episode_query = "INSERT INTO episodes (episode_id, streaming_id, season_id, episode_number, name, overview, air_date, runtime, vote_average, vote_count, still_path, last_update, tv_id) VALUES (" +
+                std::string insert_episode_query = "INSERT INTO episodes (episode_id, season_id, episode_number, name, overview, air_date, runtime, vote_average, vote_count, still_path, last_update, tv_id) VALUES (" +
                                                     std::to_string(episode["id"].get<int>()) + ", " +
-                                                    "NULL, " +
                                                     std::to_string(tmdb_result["id"].get<int>()) + ", " +
                                                     std::to_string(episode["episode_number"].get<int>()) + ", '" +
                                                     escape_string(episode["name"].get<std::string>()) + "', '" +
@@ -863,14 +905,14 @@ int get_tv_show_season_handler(struct mg_connection* conn, void* data)
                                                     std::to_string(episode["vote_count"].get<int>()) + ", '" +
                                                     episode["still_path"].get<std::string>() + "', " +
                                                     "CURRENT_TIMESTAMP, " +
-                                                    std::to_string(id) + ");";
+                                                    std::to_string(tv_id) + ");";
 
                 db_execute(insert_episode_query);
             }
         }
 
-        result["episodes"] = db_select("SELECT * FROM episodes, seasons WHERE episodes.season_id = seasons.season_id AND episodes.tv_id = " + std::to_string(id) + " AND seasons.season_number = " + std::to_string(season_number) + ";");
-        result["season"] = db_select("SELECT * FROM seasons WHERE tv_id = " + std::to_string(id) + " AND season_number = " + std::to_string(season_number));
+        result["episodes"] = db_select("SELECT * FROM episodes, seasons WHERE episodes.season_id = seasons.season_id AND episodes.tv_id = " + std::to_string(tv_id) + " AND seasons.season_number = " + std::to_string(season_number) + ";");
+        result["season"] = db_select("SELECT * FROM seasons WHERE tv_id = " + std::to_string(tv_id) + " AND season_number = " + std::to_string(season_number));
     }
 
     std::string json_str = result.dump();
@@ -1226,37 +1268,105 @@ int set_movie_data_handler(struct mg_connection* conn, void* data)
 {
     const mg_request_info* req_info = mg_get_request_info(conn);
 
-    // Parse query string
-    std::string query_string = req_info->query_string ? req_info->query_string : "";
-    std::map<std::string, std::string> params = parse_query_string(query_string);
+    // Ensure the request method is POST
+    if (strcmp(req_info->request_method, "POST") != 0) {
+        std::cerr << "[ERROR] Unsupported request method: " << req_info->request_method << std::endl;
+        mg_printf(conn, "HTTP/1.1 405 Method Not Allowed\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "Allow: POST\r\n");
+        mg_printf(conn, "\r\n");
+        return 405;
+    }
 
-    int id;
-    std::string streaming_id;
-
-    // Extract the id parameter
-    if(params.find("id") != params.end()){
-        id = std::stoi(params["id"]);
-    }else{
-        std::cerr << "[ERROR] Missing id parameter in request." << std::endl;
+    // Read the POST data
+    char post_data[1024];
+    int post_data_len = mg_read(conn, post_data, sizeof(post_data) - 1);
+    if (post_data_len <= 0) {
+        std::cerr << "[ERROR] No POST data received." << std::endl;
         mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
         mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
         mg_printf(conn, "\r\n");
         return 400;
     }
 
-    // Extract the streaming_id parameter
-    if(params.find("streaming_id") != params.end()){
-        streaming_id = params["streaming_id"];
+    // Null-terminate the POST data
+    post_data[post_data_len] = '\0';
+
+    // Parse the JSON payload
+    json request_json;
+    try {
+        request_json = json::parse(post_data);
+    } catch (const json::parse_error& e) {
+        std::cerr << "[ERROR] Failed to parse JSON: " << e.what() << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+    
+    int movie_id;
+    int64_t message_id;
+    int64_t chat_id;
+    std::string language;
+
+    // Extract the movie_id parameter
+    if(request_json.contains("movie_id")){
+        movie_id = request_json["movie_id"];
     }else{
-        std::cerr << "[ERROR] Missing streaming_id parameter in request." << std::endl;
+        std::cerr << "[ERROR] Missing movie_id parameter in request." << std::endl;
         mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
         mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
         mg_printf(conn, "\r\n");
         return 400;
     }
 
-    std::string update_query = "UPDATE movies SET streaming_id = '" + streaming_id + "' WHERE movie_id = " + std::to_string(id) + ";";
-    db_execute(update_query);
+    // Extract the video_id parameter
+    if(request_json.contains("video_id")){
+        message_id = std::stoll(request_json["video_id"].get<std::string>());
+    }else{
+        std::cerr << "[ERROR] Missing video_id parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    // Extract the chat_id parameter
+    if(request_json.contains("chat_id")){
+        chat_id = std::stoll(request_json["chat_id"].get<std::string>());
+    }else{
+        std::cerr << "[ERROR] Missing chat_id parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    // Extract the language parameter
+    if(request_json.contains("language")){
+        language = request_json["language"];
+    }else{
+        std::cerr << "[ERROR] Missing language parameter in request." << std::endl;
+        mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "\r\n");
+        return 400;
+    }
+
+    json tmp;
+    get_movie_details_(movie_id, language, tmp);
+
+    json res = db_select("SELECT * FROM telegram_video WHERE chat_id = " + std::to_string(chat_id) + " AND video_id = " + std::to_string(message_id) + ";");
+    if(res.empty()){
+        std::string insert_query = "INSERT INTO telegram_video (chat_id, video_id, movie_id) VALUES (" +
+                                   std::to_string(chat_id) + ", " +
+                                   std::to_string(message_id) + ", " +
+                                   std::to_string(movie_id) + ");";
+        db_execute(insert_query);
+    }else{
+        std::string update_query = "UPDATE telegram_video SET movie_id = " + std::to_string(movie_id) + " WHERE chat_id = " + std::to_string(chat_id) + " AND video_id = " + std::to_string(message_id) + ";";
+        db_execute(update_query);
+    }
 
     mg_printf(conn, "HTTP/1.1 200 OK\r\n");
     mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
@@ -1278,8 +1388,9 @@ int set_tv_show_data_handler(struct mg_connection* conn, void* data)
             json request_json = json::parse(post_data);
 
             int id;
-            std::string streaming_id;
             json episodes;
+            int64_t chat_id;
+            std::string video_id;
 
             if(request_json.contains("episodes")){
                 episodes = request_json["episodes"];
@@ -1291,15 +1402,35 @@ int set_tv_show_data_handler(struct mg_connection* conn, void* data)
                 return 400;
             }
 
-            for(const auto& episode : episodes){
-                if(episode.contains("id") && episode.contains("streaming_id")){
-                    id = episode["id"];
-                    streaming_id = episode["streaming_id"];
+            if(request_json.contains("chat_id")){
+                chat_id = std::stoll(request_json["chat_id"].get<std::string>());
+            }else{
+                std::cerr << "[ERROR] Missing chat_id parameter in request." << std::endl;
+                mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+                mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+                mg_printf(conn, "\r\n");
+                return 400;
+            }
 
-                    std::string update_query = "UPDATE episodes SET streaming_id = '" + streaming_id + "' WHERE episode_id = " + std::to_string(id) + ";";
-                    db_execute(update_query);
+            for(const auto& episode : episodes){
+                if(episode.contains("episode_id") && episode.contains("video_id")){
+                    int episode_id = episode["episode_id"];
+                    video_id = episode["video_id"];
+
+                    json res = db_select("SELECT * FROM telegram_video WHERE chat_id = " + std::to_string(chat_id) + " AND video_id = '" + video_id + "';");
+                    int telegram_video_id = 0;
+                    if(res.empty()){
+                        std::string insert_query = "INSERT INTO telegram_video (chat_id, video_id, episode_id) VALUES (" +
+                                                   std::to_string(chat_id) + ", '" +
+                                                   video_id + "', " +
+                                                    std::to_string(episode_id) + ");";
+                        db_execute(insert_query);
+                    }else{
+                        std::string update_query = "UPDATE telegram_video SET episode_id = " + std::to_string(episode_id) + " WHERE chat_id = " + std::to_string(chat_id) + " AND video_id = '" + video_id + "';";
+                        db_execute(update_query);
+                    }
                 }else{
-                    std::cerr << "[ERROR] Missing id or streaming_id parameter in request." << std::endl;
+                    std::cerr << "[ERROR] Missing episode_id or video_id in request." << std::endl;
                     mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
                     mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
                     mg_printf(conn, "\r\n");
@@ -1311,9 +1442,7 @@ int set_tv_show_data_handler(struct mg_connection* conn, void* data)
             mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
             mg_printf(conn, "Content-Type: application/json\r\n");
             mg_printf(conn, "\r\n");
-            json response_json = {{"status", "success"}};
-            std::string response_str = response_json.dump();
-            mg_write(conn, response_str.c_str(), response_str.size());
+            return 200;
         }else{
             std::cerr << "[ERROR] No data received in request." << std::endl;
             mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
@@ -1332,4 +1461,211 @@ int set_tv_show_data_handler(struct mg_connection* conn, void* data)
     return 200;
 }
 
+int get_videos_data_handler(struct mg_connection* conn, void* data)
+{
+    const mg_request_info* req_info = mg_get_request_info(conn);
 
+    if(strcmp("POST", req_info->request_method) == 0){
+        char post_data[10000];
+        int post_data_len = mg_read(conn, post_data, sizeof(post_data) - 1);
+        post_data[post_data_len] = '\0';
+
+        if(post_data_len > 0){
+            json request_json = json::parse(post_data);
+
+            if(!request_json.contains("videos")){
+                std::cerr << "[ERROR] Missing videos parameter in request." << std::endl;
+                mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+                mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+                mg_printf(conn, "\r\n");
+                return 400;
+            }
+
+            if(!request_json.contains("chat_id")){
+                std::cerr << "[ERROR] Missing chat_id parameter in request." << std::endl;
+                mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+                mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+                mg_printf(conn, "\r\n");
+                return 400;
+            }
+
+            int64_t chat_id = request_json["chat_id"];
+
+            json out;
+            json movies = json::array();
+            json episodes = json::array();
+            json no_data = json::array();
+            json tv_shows;
+
+            for(const auto& video : request_json["videos"]){
+                int64_t video_id = video["message_id"];
+
+                json res = db_select("SELECT * FROM telegram_video WHERE chat_id = " + std::to_string(chat_id) + " AND video_id = " + std::to_string(video_id) + ";");
+
+                if(res.empty()){
+                    no_data.push_back(video);
+                }else{
+                    if(res[0]["movie_id"].is_null() || res[0]["movie_id"] == "NULL"){
+                        json episode = video;
+                        episode["episode_id"] = std::stoi(res[0]["episode_id"].get<std::string>());
+                        episode["telegram_video_id"] = video["id"];
+                        episode["mime_type"] = video["mime_type"];
+                        episodes.push_back(episode);
+                    }else{
+                        json movie = db_select("SELECT * FROM movies WHERE movie_id = " + res[0]["movie_id"].get<std::string>() + ";");
+                        if(movie.empty()){
+                            no_data.push_back(video);
+                        }else{
+                            movie = movie[0];
+                            movie["telegram_video_id"] = video["id"];
+                            movie["mime_type"] = video["mime_type"];
+                            movies.push_back(movie);
+                        }
+                    }
+                }
+            }
+
+            out["movies"] = movies;
+            out["no_data"] = no_data;
+
+            if(!episodes.empty()){
+                std::vector<int> episode_ids;
+                std::unordered_map<int, json> episode_video_map;
+
+                for(const auto& episode : episodes){
+                    episode_ids.push_back(episode["episode_id"]);
+                    json tmp;
+                    tmp["telegram_video_id"] = episode["telegram_video_id"];
+                    tmp["mime_type"] = episode["mime_type"];
+                    episode_video_map[episode["episode_id"]] = tmp;
+                }
+
+                std::string episode_ids_str = "";
+                for(size_t i = 0; i < episode_ids.size(); i++){
+                    episode_ids_str += std::to_string(episode_ids[i]);
+                    if(i < episode_ids.size() - 1){
+                        episode_ids_str += ",";
+                    }
+                }
+
+                std::string query = R"(
+                    SELECT 
+                        t.tv_id, t.name AS tv_name, t.overview AS tv_overview, t.first_air_date, t.last_air_date, t.number_of_seasons,
+                        t.number_of_episodes, t.status, t.popularity, t.vote_average AS tv_vote_average, t.vote_count AS tv_vote_count,
+                        t.poster_path AS tv_poster_path, t.backdrop_path, t.homepage, t.in_production, t.type, t.last_update AS tv_last_update,
+                        s.season_id, s.season_number, s.name AS season_name, s.overview AS season_overview, s.air_date AS season_air_date,
+                        s.poster_path AS season_poster_path, s.episode_count, s.last_update AS season_last_update,
+                        e.episode_id, e.season_id AS episode_season_id, e.episode_number, e.name AS episode_name, e.overview AS episode_overview,
+                        e.air_date AS episode_air_date, e.runtime, e.vote_average AS episode_vote_average, e.vote_count AS episode_vote_count,
+                        e.still_path, e.last_update AS episode_last_update, e.tv_id AS episode_tv_id
+                    FROM episodes e
+                    JOIN seasons s ON e.season_id = s.season_id
+                    JOIN tv_shows t ON s.tv_id = t.tv_id
+                    WHERE e.episode_id IN ()" + episode_ids_str + R"()
+                    ORDER BY t.tv_id, s.season_number, e.episode_number
+                    )";             
+                    
+                json episodes_data = db_select(query); 
+
+                out["tv_shows"] = json::array();
+                
+                // Mappa per tenere traccia dei tv_shows e seasons già inseriti
+                std::unordered_map<std::string, size_t> tv_show_index;
+                std::unordered_map<std::string, std::unordered_map<std::string, size_t>> season_index;
+                
+                for (const auto& row : episodes_data) {
+                    std::string tv_id = row["tv_id"];
+                    std::string season_id = row["season_id"];
+                    std::string episode_id = row["episode_id"];
+                
+                    // Se il tv_show non è ancora stato aggiunto
+                    if (tv_show_index.find(tv_id) == tv_show_index.end()) {
+                        json tv_show;
+                        tv_show["tv_id"] = tv_id;
+                        tv_show["name"] = row["tv_name"];
+                        tv_show["overview"] = row["tv_overview"];
+                        tv_show["first_air_date"] = row["first_air_date"];
+                        tv_show["last_air_date"] = row["last_air_date"];
+                        tv_show["number_of_seasons"] = row["number_of_seasons"];
+                        tv_show["number_of_episodes"] = row["number_of_episodes"];
+                        tv_show["status"] = row["status"];
+                        tv_show["popularity"] = row["popularity"];
+                        tv_show["vote_average"] = row["tv_vote_average"];
+                        tv_show["vote_count"] = row["tv_vote_count"];
+                        tv_show["poster_path"] = row["tv_poster_path"];
+                        tv_show["backdrop_path"] = row["backdrop_path"];
+                        tv_show["homepage"] = row["homepage"];
+                        tv_show["in_production"] = row["in_production"];
+                        tv_show["type"] = row["type"];
+                        tv_show["last_update"] = row["tv_last_update"];
+                        tv_show["seasons"] = json::array();
+                
+                        tv_show_index[tv_id] = out["tv_shows"].size();
+                        out["tv_shows"].push_back(tv_show);
+                    }
+                
+                    auto& tv_show = out["tv_shows"][tv_show_index[tv_id]];
+                
+                    // Se la season non è ancora stata aggiunta
+                    if (season_index[tv_id].find(season_id) == season_index[tv_id].end()) {
+                        json season;
+                        season["season_id"] = season_id;
+                        season["season_number"] = row["season_number"];
+                        season["name"] = row["season_name"];
+                        season["overview"] = row["season_overview"];
+                        season["air_date"] = row["season_air_date"];
+                        season["poster_path"] = row["season_poster_path"];
+                        season["episode_count"] = row["episode_count"];
+                        season["last_update"] = row["season_last_update"];
+                        season["episodes"] = json::array();
+                
+                        season_index[tv_id][season_id] = tv_show["seasons"].size();
+                        tv_show["seasons"].push_back(season);
+                    }
+                
+                    auto& season = tv_show["seasons"][season_index[tv_id][season_id]];
+                
+                    // Aggiungiamo l'episodio
+                    json episode;
+                    episode["episode_id"] = episode_id;
+                    episode["season_id"] = row["episode_season_id"];
+                    episode["episode_number"] = row["episode_number"];
+                    episode["name"] = row["episode_name"];
+                    episode["overview"] = row["episode_overview"];
+                    episode["air_date"] = row["episode_air_date"];
+                    episode["runtime"] = row["runtime"];
+                    episode["vote_average"] = row["episode_vote_average"];
+                    episode["vote_count"] = row["episode_vote_count"];
+                    episode["still_path"] = row["still_path"];
+                    episode["last_update"] = row["episode_last_update"];
+                    episode["tv_id"] = row["episode_tv_id"];
+                    episode["telegram_video_id"] = episode_video_map[std::stoi(episode_id)]["telegram_video_id"];
+                    episode["mime_type"] = episode_video_map[std::stoi(episode_id)]["mime_type"];
+                
+                    season["episodes"].push_back(episode);
+                }             
+            }                   
+
+            mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+            mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+            mg_printf(conn, "Content-Type: application/json\r\n");
+            mg_printf(conn, "Content-Length: %zu\r\n", out.dump().size());
+            mg_printf(conn, "\r\n");
+            mg_write(conn, out.dump().c_str(), out.dump().size());
+            return 200;
+        }else{
+            std::cerr << "[ERROR] No data received in request." << std::endl;
+            mg_printf(conn, "HTTP/1.1 400 Bad Request\r\n");
+            mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+            mg_printf(conn, "\r\n");
+            return 400;
+        }
+    }else{
+        mg_printf(conn, "HTTP/1.1 405 Method Not Allowed\r\n");
+        mg_printf(conn, "Access-Control-Allow-Origin: *\r\n");
+        mg_printf(conn, "Allow: POST\r\n");
+        mg_printf(conn, "Content-Type: application/json\r\n");
+        mg_printf(conn, "\r\n");
+        return 405;
+    }
+}

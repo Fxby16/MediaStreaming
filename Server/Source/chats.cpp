@@ -117,11 +117,18 @@ std::vector<json> get_videos_from_channel(std::shared_ptr<ClientSession> session
                         if(message["content"]["@type"] == "messageVideo"){
                             unsigned int file_id = message["content"]["video"]["video"]["id"];
 
+                            std::string message_text = "";
+                            if (message["content"].contains("caption") && message["content"]["caption"].contains("text")) {
+                                message_text = message["content"]["caption"]["text"];
+                            }
+
                             json video_info = {
                                 {"id", file_id},
                                 {"mime_type", message["content"]["video"]["mime_type"]},
                                 {"file_name", message["content"]["video"]["file_name"]},
-                                {"remote_id", message["content"]["video"]["video"]["remote"]["id"]}
+                                {"remote_id", message["content"]["video"]["video"]["remote"]["id"]},
+                                {"message_text", message_text},
+                                {"message_id", message["id"]}
                             };
 
                             videos.push_back(video_info);
