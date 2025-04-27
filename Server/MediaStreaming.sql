@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost
--- Creato il: Apr 23, 2025 alle 11:57
+-- Creato il: Apr 27, 2025 alle 13:11
 -- Versione del server: 10.4.28-MariaDB
 -- Versione PHP: 8.2.4
 
@@ -31,7 +31,6 @@ USE `MediaStreaming`;
 
 CREATE TABLE `episodes` (
   `episode_id` int(11) NOT NULL,
-  `streaming_id` varchar(255) DEFAULT NULL COMMENT 'ID univoco per lo streaming',
   `season_id` int(11) DEFAULT NULL,
   `episode_number` int(11) DEFAULT NULL,
   `name` varchar(255) DEFAULT NULL,
@@ -64,7 +63,6 @@ CREATE TABLE `genres` (
 
 CREATE TABLE `movies` (
   `movie_id` int(11) NOT NULL,
-  `streaming_id` varchar(255) DEFAULT NULL COMMENT 'ID univoco per lo streaming',
   `title` varchar(255) NOT NULL,
   `overview` text DEFAULT NULL,
   `release_date` date DEFAULT NULL,
@@ -152,6 +150,20 @@ CREATE TABLE `seasons` (
 -- --------------------------------------------------------
 
 --
+-- Struttura della tabella `telegram_video`
+--
+
+CREATE TABLE `telegram_video` (
+  `id` int(11) NOT NULL,
+  `chat_id` bigint(20) DEFAULT NULL,
+  `video_id` bigint(20) DEFAULT NULL,
+  `movie_id` int(11) DEFAULT NULL,
+  `episode_id` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Struttura della tabella `tv_shows`
 --
 
@@ -212,8 +224,8 @@ CREATE TABLE `tv_show_genres` (
 --
 ALTER TABLE `episodes`
   ADD PRIMARY KEY (`episode_id`),
-  ADD UNIQUE KEY `streaming_id` (`streaming_id`),
-  ADD KEY `season_id` (`season_id`);
+  ADD KEY `season_id` (`season_id`),
+  ADD KEY `fk_tv_id` (`tv_id`);
 
 --
 -- Indici per le tabelle `genres`
@@ -225,8 +237,7 @@ ALTER TABLE `genres`
 -- Indici per le tabelle `movies`
 --
 ALTER TABLE `movies`
-  ADD PRIMARY KEY (`movie_id`),
-  ADD UNIQUE KEY `streaming_id` (`streaming_id`);
+  ADD PRIMARY KEY (`movie_id`);
 
 --
 -- Indici per le tabelle `movie_cast`
@@ -257,6 +268,14 @@ ALTER TABLE `seasons`
   ADD KEY `tv_id` (`tv_id`);
 
 --
+-- Indici per le tabelle `telegram_video`
+--
+ALTER TABLE `telegram_video`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `fk_telegram_video_movie` (`movie_id`),
+  ADD KEY `fk_telegram_video_tv_show` (`episode_id`);
+
+--
 -- Indici per le tabelle `tv_shows`
 --
 ALTER TABLE `tv_shows`
@@ -278,6 +297,16 @@ ALTER TABLE `tv_show_genres`
   ADD KEY `genre_id` (`genre_id`);
 
 --
+-- AUTO_INCREMENT per le tabelle scaricate
+--
+
+--
+-- AUTO_INCREMENT per la tabella `telegram_video`
+--
+ALTER TABLE `telegram_video`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- Limiti per le tabelle scaricate
 --
 
@@ -285,7 +314,8 @@ ALTER TABLE `tv_show_genres`
 -- Limiti per la tabella `episodes`
 --
 ALTER TABLE `episodes`
-  ADD CONSTRAINT `episodes_ibfk_1` FOREIGN KEY (`season_id`) REFERENCES `seasons` (`season_id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `episodes_ibfk_1` FOREIGN KEY (`season_id`) REFERENCES `seasons` (`season_id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_tv_id` FOREIGN KEY (`tv_id`) REFERENCES `tv_shows` (`tv_id`);
 
 --
 -- Limiti per la tabella `movie_cast`
@@ -306,6 +336,13 @@ ALTER TABLE `movie_genres`
 --
 ALTER TABLE `seasons`
   ADD CONSTRAINT `seasons_ibfk_1` FOREIGN KEY (`tv_id`) REFERENCES `tv_shows` (`tv_id`) ON DELETE CASCADE;
+
+--
+-- Limiti per la tabella `telegram_video`
+--
+ALTER TABLE `telegram_video`
+  ADD CONSTRAINT `fk_telegram_video_movie` FOREIGN KEY (`movie_id`) REFERENCES `movies` (`movie_id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `fk_telegram_video_tv_show` FOREIGN KEY (`episode_id`) REFERENCES `episodes` (`episode_id`) ON DELETE SET NULL;
 
 --
 -- Limiti per la tabella `tv_show_cast`
