@@ -1489,7 +1489,7 @@ int get_videos_data_handler(struct mg_connection* conn, void* data)
                 return 400;
             }
 
-            int64_t chat_id = request_json["chat_id"];
+            int64_t chat_id = std::stoll(request_json["chat_id"].get<std::string>());
 
             json out;
             json movies = json::array();

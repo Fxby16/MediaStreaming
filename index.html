@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Streaming Auth</title>
+  <!--<link rel="stylesheet" href="CSS/test.css" />-->
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     .auth-step { transition: all 0.3s ease; }
@@ -22,6 +23,10 @@
 
   .video-card button:hover {
     color: #ffffff; /* Change color on hover */
+  }
+
+  #video-container {
+    z-index: 20000;
   }
 
   #open-modal-btn {
@@ -416,6 +421,10 @@
     }
 
     function getFiles(chat_id) {
+      if (typeof chat_id !== 'string') {
+        chat_id = String(chat_id);
+      }
+
       const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"; // TMDB base URL with size
     
       currentChatId = chat_id;
@@ -603,6 +612,12 @@
     }
 
     function getChats() {
+      if(document.cookie.includes('chat_id')) {
+        const chatId = document.cookie.split('; ').find(row => row.startsWith('chat_id=')).split('=')[1];
+        getFiles(chatId);
+        console.log('Chat ID from cookie:', chatId);
+      }
+
       if(chats.length > 0) {
         updateChatList();
       } else {
@@ -611,8 +626,9 @@
           .then(data => {
             chats = data;
             updateChatList();
+            console.log('Chats:', chats);
           }); 
-      }
+        }
     }
 
     function updateChatList() {
@@ -623,8 +639,12 @@
         const li = document.createElement('li');
         li.className = 'mb-2 p-2 hover:bg-gray-700 rounded cursor-pointer';
         li.textContent = chat['title'];
-        li.onclick = () => getFiles(chat['id']);
-        chatList.appendChild(li);
+        li.onclick = () => {
+          document.cookie = `chat_id=${chat['id']}; expires=Fri, 31 Dec 9999 23:59:59 GMT; path=/;`;
+          getFiles(chat['id']);
+        };
+
+        chatList.appendChild(li); 
       });
 
       // If we have a current chat selected, highlight it
