@@ -16,7 +16,7 @@ Stream media from Telegram.
 
 On Windows, some libraries must be installed using vcpkg. 
 
-`vcpkg install curl:x64-windows openssl:x64-windows zlib:x64-windows civetweb:x64-windows`
+`vcpkg install curl:x64-windows openssl:x64-windows zlib:x64-windows civetweb:x64-windows`  
 `vcpkg integrate install`
 
 TDLib, MySQL Connector, and nlohmann/json are already included in the Dependencies folder. You may build them yourself and replace the files if you prefer.
