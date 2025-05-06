@@ -401,7 +401,11 @@
                 fetch(`${server}/logout?session_id=${session_id}`)
                   .then(() => {
                     session_id = 0;
+                    chats = [];          // Resetta la lista delle chat
+                    videos_data = [];    // Resetta i dati dei video
+                    currentChatId = null;
                     document.cookie = 'session_id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                    document.cookie = 'chat_id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
                     window.location.reload();
                   });
               };
@@ -420,7 +424,10 @@
       document.getElementById(id).classList.remove('hidden');
     }
 
+    let isFetchingFiles = false; // Aggiungi questa variabile globale
     function getFiles(chat_id) {
+      if (isFetchingFiles) return; // Se è già in corso una chiamata, esci
+      isFetchingFiles = true;      // Imposta il flag a true
       if (typeof chat_id !== 'string') {
         chat_id = String(chat_id);
       }
@@ -522,7 +529,10 @@
                 videoGrid.appendChild(card);
               });
             });
-        });
+        })
+         .finally(() => {
+            isFetchingFiles = false; // Resetta il flag a fine chiamata
+          });
     }
 
     let navigationStack = []; // Stack to track navigation levels
@@ -639,6 +649,9 @@
         const li = document.createElement('li');
         li.className = 'mb-2 p-2 hover:bg-gray-700 rounded cursor-pointer';
         li.textContent = chat['title'];
+
+        li.onclick = null;
+
         li.onclick = () => {
           document.cookie = `chat_id=${chat['id']}; expires=Fri, 31 Dec 9999 23:59:59 GMT; path=/;`;
           getFiles(chat['id']);

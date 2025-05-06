@@ -9,3 +9,7 @@ Makefile
 *.log.*
 *.log
 out.txt
+.vs
+*.vcxproj
+*.vcxproj.*
+*.sln

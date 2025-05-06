@@ -1,7 +1,11 @@
 #include "tmdb.hpp"
 #include "db.hpp"
 
-#include <mysql/mysql.h>
+#ifdef __linux__
+    #include <mysql/mysql.h>
+#else
+    #include <mysql.h>
+#endif
 #include <mutex>
 #include <iostream>
 
@@ -13,20 +17,20 @@ static const char* db_user = "root";
 static const char* db_password = "";
 static const char* db_name = "MediaStreaming";
 
-int connect_db() 
+int connect_db()
 {
     std::lock_guard<std::mutex> lock(db_mutex);
-    if(db_connected){
+    if (db_connected) {
         return 0;
     }
 
     conn = mysql_init(nullptr);
-    if(conn == nullptr){
+    if (conn == nullptr) {
         std::cerr << "mysql_init() failed" << std::endl;
         return -1;
     }
 
-    if(mysql_real_connect(conn, db_host, db_user, db_password, db_name, 0, nullptr, 0) == nullptr){
+    if (mysql_real_connect(conn, db_host, db_user, db_password, db_name, 0, nullptr, 0) == nullptr) {
         std::cerr << "mysql_real_connect() failed: " << mysql_error(conn) << std::endl;
         mysql_close(conn);
         return -1;
@@ -36,10 +40,10 @@ int connect_db()
     return 0;
 }
 
-int disconnect_db() 
+int disconnect_db()
 {
     std::lock_guard<std::mutex> lock(db_mutex);
-    if(conn != nullptr){
+    if (conn != nullptr) {
         mysql_close(conn);
         conn = nullptr;
         db_connected = false;
@@ -47,21 +51,21 @@ int disconnect_db()
     return 0;
 }
 
-json db_select(const std::string& query) 
+json db_select(const std::string& query)
 {
     std::lock_guard<std::mutex> lock(db_mutex);
-    if(!db_connected){
+    if (!db_connected) {
         std::cerr << "Database not connected" << std::endl;
         return json();
     }
 
-    if(mysql_query(conn, query.c_str())){
+    if (mysql_query(conn, query.c_str())) {
         std::cerr << "mysql_query() failed: " << mysql_error(conn) << std::endl;
         return json();
     }
 
     MYSQL_RES* res = mysql_store_result(conn);
-    if(res == nullptr){
+    if (res == nullptr) {
         std::cerr << "mysql_store_result() failed: " << mysql_error(conn) << std::endl;
         return json();
     }
@@ -70,9 +74,9 @@ json db_select(const std::string& query)
     MYSQL_ROW row;
     json result = json::array();
 
-    while((row = mysql_fetch_row(res))){
+    while ((row = mysql_fetch_row(res))) {
         json obj = json::object();
-        for(int i = 0; i < num_fields; i++){
+        for (int i = 0; i < num_fields; i++) {
             obj[mysql_fetch_field_direct(res, i)->name] = row[i] ? row[i] : "NULL";
         }
         result.push_back(obj);
@@ -82,15 +86,15 @@ json db_select(const std::string& query)
     return result;
 }
 
-int db_execute(const std::string& query) 
+int db_execute(const std::string& query)
 {
     std::lock_guard<std::mutex> lock(db_mutex);
-    if(!db_connected){
+    if (!db_connected) {
         std::cerr << "Database not connected" << std::endl;
         return -1;
     }
 
-    if(mysql_query(conn, query.c_str())){
+    if (mysql_query(conn, query.c_str())) {
         std::cerr << "mysql_query() failed: " << mysql_error(conn) << std::endl;
         return -1;
     }
@@ -98,10 +102,10 @@ int db_execute(const std::string& query)
     return 0;
 }
 
-std::string escape_string(const std::string& str) 
+std::string escape_string(const std::string& str)
 {
     std::lock_guard<std::mutex> lock(db_mutex);
-    if(!db_connected){
+    if (!db_connected) {
         std::cerr << "Database not connected" << std::endl;
         return str;
     }
