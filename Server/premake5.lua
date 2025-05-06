@@ -43,7 +43,7 @@ project "MediaStreamingServer"
         defines { "TDJSON_STATIC_DEFINE", "TD_ENABLE_STATIC", "TDJSON_STATIC_LIBRARY" }
 
     filter "system:linux"
-        links { "tdjson", "mysql", "curl" }
+        links { "tdjson", "mysqlclient", "curl" }
 
     filter "configurations:Debug"
         defines { "DEBUG" }

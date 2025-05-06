@@ -303,7 +303,7 @@ int handle_auth(struct mg_connection* conn, void* data)
                 uint32_t session_id = 0;
 
                 if(request_json.contains("session_id") && request_json["session_id"] != 0){ // Client already logged in
-                    session_id = request_json["session_id"];
+                    session_id = std::stoul(request_json["session_id"].get<std::string>());
                 }else{ // New client, generate session id
                     session_id = rand_uint32();
                 }
